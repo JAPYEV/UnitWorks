@@ -335,7 +335,7 @@ function SearchResults({ sr, s, set, byId, api, lockedN }) {
             ))}
           </div>
         ) : <div style={{ fontSize: 12.5, color: '#9AA3AE' }}>No branch was rejected before the solution limit was reached.</div>}
-        <h3 style={{ margin: '18px 0 10px', fontSize: 13, fontWeight: 600 }}>Valid configurations found <span style={{ fontWeight: 400, color: '#7D8692' }}>· cheapest first</span></h3>
+        <h3 style={{ margin: '18px 0 10px', fontSize: 13, fontWeight: 600 }}>Valid configurations found <span style={{ fontWeight: 400, color: '#7D8692' }}>· found results sorted by price; capped search is not globally cheapest-K</span></h3>
         {sr.solutions.length === 0 && (
           <div style={{ padding: 12, borderRadius: 7, border: '1px solid rgba(242,84,91,0.35)', background: 'rgba(242,84,91,0.07)', fontSize: 12.5, color: '#E6C3C5', lineHeight: 1.5 }}>
             No valid configuration contains all locked parts{sr.budget ? ` within ${U.peso(sr.budget)}` : ''}. Remove a conflicting part or raise the budget, then search again.

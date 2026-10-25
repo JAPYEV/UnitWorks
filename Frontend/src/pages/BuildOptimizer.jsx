@@ -148,21 +148,24 @@ function Fail({ rec, run }) {
   if (run.minRam) reasons.push(`${run.minRam} GB+ memory`);
   if (run.excludeOOS) reasons.push('in-stock parts only');
   const text = rec.minFeasible
-    ? `The cheapest compatible build with these constraints (${reasons.join(', ') || 'none'}) costs ${U.peso(rec.minFeasible)}, which is ${U.peso(rec.minFeasible - run.budget)} over the ${U.peso(run.budget)} budget. Raise the budget or relax a preference.`
+    ? rec.minFeasible <= run.budget
+      ? `A verified combination costs ${U.peso(rec.minFeasible)}, but conservative rounded group costs do not fit this budget. Increase the budget or relax a preference.`
+      : `The cheapest compatible build with these constraints (${reasons.join(', ') || 'none'}) costs ${U.peso(rec.minFeasible)}, which is ${U.peso(rec.minFeasible - run.budget)} over the ${U.peso(run.budget)} budget. Raise the budget or relax a preference.`
     : `No compatible combination exists with these constraints (${reasons.join(', ') || 'none'}). Relax a preference and try again.`;
   return (
     <div role="alert" style={{ padding: 18, borderRadius: 8, border: '1px solid rgba(242,84,91,0.35)', background: 'rgba(242,84,91,0.07)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
       <Icon name="circle-x" size={18} color="#F2545B" style={{ marginTop: 1 }} />
-      <div><div style={{ fontWeight: 600, fontSize: 14 }}>No compatible build fits these requirements</div><div style={{ fontSize: 13, color: '#D9C2C4', marginTop: 4, lineHeight: 1.55 }}>{text}</div></div>
+      <div><div style={{ fontWeight: 600, fontSize: 14 }}>No build returned for these requirements</div><div style={{ fontSize: 13, color: '#D9C2C4', marginTop: 4, lineHeight: 1.55 }}>{text}</div></div>
     </div>
   );
 }
 
 function Result({ rec, alts, durationMs, run, s, set, products, api }) {
   const w = rec.w, uc = run.useCase, budget = run.budget;
-  // Current inventory, plus the result's own product snapshots, so a part archived since the run still renders.
+  // The returned recommendation/alternative snapshots are authoritative for
+  // this run's prices, scores and checks even if current inventory has changed.
   const byId = U.indexProducts(products);
-  for (const it of rec.items) if (!byId[it.product.id]) byId[it.product.id] = it.product;
+  for (const r of [rec, ...alts.map(a => a.r)]) for (const it of r.items) byId[it.product.id] = it.product;
   for (const r of [rec, ...alts.map(a => a.r)]) for (const id of Object.values(r.sel)) {
     if (!byId[id]) byId[id] = { id, name: `${id} (no longer in inventory)`, category: '', price: 0, stock: 0, minStock: 0, specs: {}, perf: {} };
   }
@@ -184,9 +187,9 @@ function Result({ rec, alts, durationMs, run, s, set, products, api }) {
   const isAlt = cur.key !== 'rec';
   const contribs = U.CATEGORIES.map(k => ({ k, v: (w[k.key] || 0) * U.compScore(byId[cur.r.sel[k.key]], k.key, uc) })).sort((a, b) => b.v - a.v);
   const why = !isAlt ? [
-    `Highest weighted score (${rec.score.toFixed(1)}/100) across ${rec.anchorsFeasible} compatible platforms that fit ${U.peso(budget)}${run.lean ? ', after the unspent-budget preference' : ''}.`,
+    `Best ${run.lean ? 'score minus rounded-spend penalty' : 'weighted score'} in the rounded-cost search domain across ${rec.anchorsFeasible} compatible platforms. Suitability: ${rec.score.toFixed(1)}/100.`,
     `${byId[rec.sel[contribs[0].k.key]].name} and ${byId[rec.sel[contribs[1].k.key]].name} contribute the most points (${contribs[0].v.toFixed(1)} and ${contribs[1].v.toFixed(1)}) under the ${uc} weights.`,
-    `${U.peso(rec.remaining)} remains because no higher-scoring compatible combination fits the remaining budget.`,
+    `${U.peso(rec.remaining)} remains. Conservative ₱${rec.unit} group rounding can exclude builds that fit their actual prices.`,
     `All ${chk.passes.length} compatibility checks pass.${rec.exclusions.oos ? ` ${rec.exclusions.oos} out-of-stock products were excluded.` : ''}${rec.exclusions.unknown.length ? ` Excluded for missing specs: ${rec.exclusions.unknown.join(', ')}.` : ''}`
   ] : [
     cur.key === 'gfx' ? 'Re-optimized with Graphics priority at Max and the others lowered.' : cur.key === 'prod' ? 'Re-optimized with Processing and Memory priorities at Max and Graphics at Low.' : `Re-optimized with 80% of the budget (${U.peso(Math.round(budget * 0.8 / 100) * 100)}).`,
