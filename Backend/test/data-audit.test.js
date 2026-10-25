@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { freshDb, createUser } from './helpers.js';
 import { collectAudit } from '../scripts/data-audit.js';
 import { captureSnapshot, verifySnapshot } from '../scripts/data-snapshot.js';
@@ -63,18 +62,14 @@ test('migration and seed reruns preserve data', async () => {
   } finally { await db.close(); }
 });
 
-test('proposed hardening rejects inconsistent totals, permits atomic saves/deletes and closes future grants', async () => {
-  const db = await freshDb();
+test('hardening migration rejects inconsistent totals, permits atomic saves/deletes and closes future grants', async () => {
+  const db = await freshDb({ through: '20261025000500_auth_profiles.sql' });
   try {
     // Supabase-like roles and vulnerable defaults in this isolated sandbox only.
     await db.exec(`create role anon; create role authenticated;
       alter default privileges in schema public grant all on tables to anon,authenticated;
       alter default privileges in schema public grant execute on functions to anon,authenticated;`);
-    // The review script targets the production owner; use this sandbox's owner.
-    const role = (await db.query('select current_user as name')).rows[0].name.replaceAll('"','""');
-    const sql = readFileSync(new URL('../../docs/phase2/proposed-hardening.sql', import.meta.url),'utf8')
-      .replaceAll('for role postgres', `for role "${role}"`);
-    await db.exec(sql);
+    await migrate(db, { log: () => {} });
     await assert.rejects(db.query(`select save_pc_build($1::jsonb)`, [JSON.stringify({
       name: 'Invalid sum', totalPrice: 100, status: 'incomplete', components: []
     })]), e => e.code === '23514');
@@ -97,5 +92,35 @@ test('proposed hardening rejects inconsistent totals, permits atomic saves/delet
     const access = (await db.query(`select has_table_privilege('anon','phase2_grant_probe','SELECT') as table_access,
       has_function_privilege('authenticated','phase2_grant_probe()','EXECUTE') as function_access`)).rows[0];
     assert.deepEqual(access, { table_access:false,function_access:false });
+  } finally { await db.close(); }
+});
+
+test('pre-hardening snapshots replay only applied migrations, then can upgrade without changing rows', async () => {
+  const db = await freshDb({ through: '20261025000500_auth_profiles.sql' });
+  try {
+    await db.query('begin read only');
+    const snapshot = await captureSnapshot(db);
+    await db.query('rollback');
+    assert.equal(snapshot.migrations.length,5);
+    assert.equal((await verifySnapshot(snapshot)).status,'verified');
+    await migrate(db,{log:()=>{}});
+    await db.query('begin read only');
+    const upgraded = await captureSnapshot(db);
+    await db.query('rollback');
+    assert.equal(upgraded.migrations.length,6);
+    assert.deepEqual(upgraded.tables,snapshot.tables);
+    assert.equal((await verifySnapshot(upgraded)).status,'verified');
+  } finally { await db.close(); }
+});
+
+test('hardening refuses historical mismatches atomically and releases the failed transaction', async () => {
+  const db = await freshDb({ through:'20261025000500_auth_profiles.sql' });
+  try {
+    await db.query('select save_pc_build($1::jsonb)',[JSON.stringify({name:'Historical mismatch',totalPrice:1,status:'incomplete',components:[]})]);
+    await assert.rejects(migrate(db,{log:()=>{}}),e=>e.code==='23514');
+    const history=(await db.query('select count(*)::int as n from unitworks_meta.applied_migrations')).rows[0].n;
+    assert.equal(history,5);
+    assert.equal((await db.query("select count(*)::int as n from pc_builds where total_price=1")).rows[0].n,1);
+    assert.equal((await db.query("select count(*)::int as n from pg_proc where proname='check_saved_snapshot_total'")).rows[0].n,0);
   } finally { await db.close(); }
 });

@@ -57,7 +57,7 @@ test('multi-line receipt is all-or-nothing', async () => {
 
 test('receiving a plan rolls back entirely if one line fails', async () => {
   const id = (await one(`select save_restock_plan($1::jsonb) as id`, [JSON.stringify({
-    budget: 100000, coverDays: 7, totalCost: 20000, remaining: 80000, items: [
+    budget: 100000, coverDays: 7, totalCost: 19770, remaining: 80230, items: [
       { itemId: 'ssd-nv2-1t', rank: 1, urgency: 90, decision: 'selected', recommendedQty: 4, orderQty: 4, unitCost: 2580, orderCost: 10320, reason: 'test' },
       { itemId: 'cool-ak400', rank: 2, urgency: 80, decision: 'partial', recommendedQty: 10, orderQty: 7, unitCost: 1350, orderCost: 9450, reason: 'test' }
     ]

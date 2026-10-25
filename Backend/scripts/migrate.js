@@ -11,11 +11,15 @@ import { createDb } from '../src/lib/db.js';
 
 export const MIGRATIONS_DIR = fileURLToPath(new URL('../../supabase/migrations/', import.meta.url));
 
-export async function migrate(db, { log = console.log } = {}) {
+export async function migrate(db, { log = console.log, through } = {}) {
+  const available = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql')).sort();
+  if (through !== undefined && !available.includes(through)) throw new Error('UNKNOWN_MIGRATION_TARGET');
   await db.exec(`create schema if not exists unitworks_meta;
     create table if not exists unitworks_meta.applied_migrations (name text primary key, applied_at timestamptz not null default now());`);
   const done = new Set((await db.query('select name from unitworks_meta.applied_migrations')).rows.map(r => r.name));
-  const files = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql')).sort();
+  // Restore rehearsals replay exactly the migration prefix recorded by their
+  // snapshot, even when this checkout contains newer pending migrations.
+  const files = through === undefined ? available : available.slice(0, available.indexOf(through) + 1);
   let applied = 0;
   for (const f of files) {
     if (done.has(f)) continue;

@@ -1,6 +1,9 @@
 -- REVIEW COPY ONLY. Not an applied migration. Do not run against production
 -- before the Phase 2 review, backup/recovery prerequisites, and explicit approval.
 -- Test on an isolated database first. Existing migrations remain unchanged.
+-- Historical proposal: the tested implementation now lives in
+-- supabase/migrations/20261025000600_data_integrity_hardening.sql.
+-- Do not apply both scripts. Use the migration only after deployment approval.
 begin;
 
 -- A: owner-specific defaults. These statements affect future objects only.

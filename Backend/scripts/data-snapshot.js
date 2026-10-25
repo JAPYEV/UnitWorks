@@ -14,8 +14,13 @@ const digest = rows => hash([...rows].sort().join('\n'));
 
 export async function captureSnapshot(db) {
   await db.query("set local timezone='UTC'");
+  const applied = (await db.query('select name from unitworks_meta.applied_migrations order by name')).rows.map(r => r.name);
+  const manifest = migrationManifest();
+  if (!applied.length || JSON.stringify(applied) !== JSON.stringify(manifest.slice(0, applied.length).map(m => m.name))) {
+    throw new Error('DATABASE_MIGRATION_HISTORY_MISMATCH');
+  }
   const snapshot = { format: 1, scope: 'application-data-only', createdAt: new Date().toISOString(),
-    migrations: migrationManifest(), tables: {} };
+    migrations: manifest.slice(0, applied.length), tables: {} };
   for (const name of TABLES) {
     const rows = (await db.query(`select to_jsonb(t)::text as record from public.${name} t`)).rows.map(r => r.record);
     snapshot.tables[name] = { rows, sha256: digest(rows) };
@@ -25,7 +30,10 @@ export async function captureSnapshot(db) {
 
 export async function verifySnapshot(snapshot) {
   if (snapshot.format !== 1 || snapshot.scope !== 'application-data-only') throw new Error('INVALID_SNAPSHOT');
-  if (JSON.stringify(snapshot.migrations) !== JSON.stringify(migrationManifest())) throw new Error('MIGRATION_MANIFEST_MISMATCH');
+  if (!Array.isArray(snapshot.migrations) || !snapshot.migrations.length ||
+    JSON.stringify(snapshot.migrations) !== JSON.stringify(migrationManifest().slice(0, snapshot.migrations.length))) {
+    throw new Error('MIGRATION_MANIFEST_MISMATCH');
+  }
   if (Object.keys(snapshot.tables).sort().join() !== [...TABLES].sort().join()) throw new Error('SNAPSHOT_TABLE_MISMATCH');
   for (const name of TABLES) {
     if (digest(snapshot.tables[name].rows) !== snapshot.tables[name].sha256) throw new Error('SNAPSHOT_CHECKSUM_MISMATCH');
@@ -33,7 +41,7 @@ export async function verifySnapshot(snapshot) {
   // No configurable target: this function cannot restore into the live database.
   const db = await createDb({ dbDriver: 'pglite', pgliteDataDir: 'memory' });
   try {
-    await migrate(db, { log: () => {} }); // auth.users deliberately absent; profiles restored without auth credentials
+    await migrate(db, { log: () => {}, through: snapshot.migrations.at(-1).name }); // auth.users absent; no credentials restored
     await db.query('begin');
     await db.query("set local timezone='UTC'");
     // The reference-data migration preloads these two tables in this EMPTY sandbox.
@@ -54,6 +62,7 @@ export async function verifySnapshot(snapshot) {
       greatest(coalesce((select max(id) from inventory_movements),0),1),
       exists(select 1 from inventory_movements))`);
     await db.query("select set_config('unitworks.stock_change','off',true)");
+    await db.query('set constraints all immediate');
     const restored = await captureSnapshot(db);
     for (const name of TABLES) {
       if (restored.tables[name].sha256 !== snapshot.tables[name].sha256) throw new Error('RESTORE_CONTENT_MISMATCH');
