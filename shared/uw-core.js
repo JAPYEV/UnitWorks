@@ -112,7 +112,12 @@ function normalizedProduct(p) {
   return { ...p, specs };
 }
 export const list = s => (has(s) ? String(s) : '').split(',').map(x => x.trim()).filter(Boolean);
-export const peso = n => (n < 0 ? '−' : '') + '₱' + Math.round(Math.abs(n || 0)).toLocaleString('en-US');
+export const peso = n => {
+  const cents = Math.round(Math.abs(n || 0) * 100);
+  return (n < 0 ? '−' : '') + '₱' + (cents / 100).toLocaleString('en-US', {
+    minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2
+  });
+};
 export const pesoShort = n => n >= 1e6 ? '₱' + (n / 1e6).toFixed(2) + 'M' : n >= 1e4 ? '₱' + (n / 1e3).toFixed(1) + 'k' : peso(n);
 export const fmtDate = s => { const d = new Date(s); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' + d.toTimeString().slice(0, 5); };
 
@@ -464,11 +469,26 @@ export function optimizeBuild(o) {
     : a.total-b.total || compareId(a.cpu,b.cpu) || compareId(a.mb,b.mb) || compareId(a.cs,b.cs))
     .slice(0, 6).map(a => ({ cpu: a.cpu.name, mb: a.mb.name, cs: a.cs.name, anchorCost: a.anchorCost, total: a.total, score: a.score, sel: a.sel }));
   return {
-    ok: true, budget, useCase, w, lean, sel, items, total: best.ar.total, score: best.ar.score, remaining: budget - best.ar.total,
-    anchorCost: best.ar.anchorCost, anchorScore: best.anchorScore, subBudget: budget - best.ar.anchorCost, cap: best.cap, unit,
+    ok: true, budget, useCase, w, lean, sel, items, total: best.ar.total, score: best.ar.score, remaining: (budgetCents - moneyCents(best.ar.total)) / 100,
+    anchorCost: best.ar.anchorCost, anchorScore: best.anchorScore, subBudget: (budgetCents - moneyCents(best.ar.anchorCost)) / 100, cap: best.cap, unit,
     anchorsTotal, anchorsFeasible, anchorsOver, anchorsInfeasible, states, maxK, minFeasible, table, transitions, topAnchors, exclusions,
     stageSizes: best.groups.map(g => g.length)
   };
+}
+
+// Demand is a decimal business input. Avoid Math.ceil(.28 * 25) === 8
+// by evaluating its decimal representation as an exact rational first.
+// For DB demand (two decimal places), the integer operands stay small.
+function demandCeiling(daily, days, minimum) {
+  const [mantissa, exponent = '0'] = String(daily).toLowerCase().split('e');
+  const [integer, fraction = ''] = mantissa.split('.');
+  const shift = Number(exponent) - fraction.length;
+  let numerator = BigInt(integer + fraction) * BigInt(days);
+  const denominator = shift < 0 ? 10n ** BigInt(-shift) : 1n;
+  if (shift > 0) numerator *= 10n ** BigInt(shift);
+  const total = Number((numerator + denominator - 1n) / denominator + BigInt(minimum));
+  whole(total, 'Demand target');
+  return total;
 }
 
 // ---------- GREEDY: restock optimizer ----------
@@ -483,8 +503,8 @@ export function restockPlan(products, budget, coverDays = 7) {
   const rows = real.map(p => {
     const daily = p.dailySales || 0;
     const dts = daily > 0 ? p.stock / daily : Infinity;
-    const rop = Math.ceil(daily * p.leadTime + p.minStock);
-    const target = Math.ceil(p.minStock + daily * (p.leadTime + coverDays));
+    const rop = demandCeiling(daily, BigInt(p.leadTime), p.minStock);
+    const target = demandCeiling(daily, BigInt(p.leadTime) + BigInt(coverDays), p.minStock);
     const need = Math.max(0, target - p.stock);
     const moq = Math.max(1, p.moq || 1);
     const qty = Math.max(moq, need);

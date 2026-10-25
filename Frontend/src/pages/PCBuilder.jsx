@@ -9,7 +9,7 @@ const ST = {
   unknown: { icon: 'circle-help', color: '#F5B83D' }, pending: { icon: 'circle-dashed', color: '#5B636E' }
 };
 const MK = { ok: ['›', '#A3E635', '#E6E9ED'], prune: ['×', '#F2545B', '#C99A9D'], back: ['↰', '#7D8692', '#7D8692'], solution: ['✓', '#3FCF8E', '#3FCF8E'] };
-const INIT = { active: 'cpu', q: '', budget: '', inStockOnly: false, spec: null, search: null, searching: false, traceAll: false, checksOpen: true };
+const INIT = { searchInput: null, active: 'cpu', q: '', budget: '', inStockOnly: false, spec: null, search: null, searching: false, traceAll: false, checksOpen: true };
 const ellipsis = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 const sBtn = { height: 36, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #333B46', borderRadius: 6, background: '#232932', fontSize: 13, '--hbg': '#2A313B' };
 const pBtn = { height: 36, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 7, border: 'none', borderRadius: 6, background: '#A3E635', color: '#15191F', fontSize: 13, fontWeight: 600, '--hbg': '#B5F04F' };
@@ -19,6 +19,20 @@ function budgetVal(raw) {
   if (!b) return { v: null, err: false };
   const n = +b;
   return isFinite(n) && n > 0 && Number.isInteger(n) ? { v: n, err: false } : { v: null, err: true };
+}
+
+// A capped search has not established infeasibility, even when it found no build.
+export function searchNotice(result) {
+  const count = result.solutions.length;
+  return {
+    kind: count ? 'success' : 'warning',
+    title: count ? `${count} valid configuration${count === 1 ? '' : 's'} found` : result.stopped ? 'Search limit reached' : 'No valid configuration',
+    body: `${result.stats.explored} candidates explored, ${result.stats.pruned} branches pruned.${result.stopped ? ' Search was capped; unexplored configurations may remain.' : ''}`
+  };
+}
+
+export function searchInputKey(build, budget, inStockOnly) {
+  return JSON.stringify([U.CATEGORIES.map(c => build[c.key] ?? null), budget ?? null, !!inStockOnly]);
 }
 
 export default function PCBuilder({ products = [], build = {}, api = {}, vw = 1280 }) {
@@ -41,9 +55,9 @@ export default function PCBuilder({ products = [], build = {}, api = {}, vw = 12
     set({ searching: true });
     try {
       const r = await buildsApi.search({ locked: build, budget: bv.v ?? undefined, inStockOnly: s.inStockOnly });
-      set({ searching: false, search: r, traceAll: false });
-      api.toast(r.solutions.length ? 'success' : 'warning', r.solutions.length ? `${r.solutions.length} valid configuration${r.solutions.length > 1 ? 's' : ''} found` : 'No valid configuration',
-        `${r.stats.explored} candidates explored, ${r.stats.pruned} branches pruned.`);
+      set({ searching: false, search: r, searchInput: searchInputKey(build, bv.v, s.inStockOnly), traceAll: false });
+      const notice = searchNotice(r);
+      api.toast(notice.kind, notice.title, notice.body);
     } catch (e) {
       set({ searching: false });
       api.toast('error', 'Search failed', e.message);
@@ -226,7 +240,7 @@ export default function PCBuilder({ products = [], build = {}, api = {}, vw = 12
         </aside>
       </div>
 
-      <SearchPanel s={s} set={set} byId={byId} api={api} runSearch={runSearch} />
+      <SearchPanel build={build} s={s} set={set} byId={byId} api={api} runSearch={runSearch} />
 
       <SavedBuilds saved={saved} byId={byId} api={api} />
 
@@ -268,9 +282,11 @@ function PartRow({ p, build, active, byId, onToggle, onSpecs }) {
   );
 }
 
-function SearchPanel({ s, set, byId, api, runSearch }) {
+export function SearchPanel({ build = {}, s, set, byId, api, runSearch }) {
   const sr = s.search;
   const lockedN = sr ? Object.keys(sr.locked).length : 0;
+  const currentBudget = budgetVal(s.budget);
+  const stale = sr && s.searchInput !== searchInputKey(build, currentBudget.err ? 'invalid' : currentBudget.v, s.inStockOnly);
   return (
     <section aria-label="Backtracking compatibility search" style={{ ...card, padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
@@ -284,6 +300,9 @@ function SearchPanel({ s, set, byId, api, runSearch }) {
         <div style={{ fontSize: 12, color: '#7D8692', textAlign: 'right' }}>{sr && !s.searching ? `${lockedN} locked · ${sr.budget ? 'budget ' + U.peso(sr.budget) : 'no budget'} · ran in ${sr.durationMs} ms on the server` : ''}</div>
       </div>
 
+      {stale && !s.searching && <div role="status" style={{ padding: 12, border: '1px solid #66532C', borderRadius: 6, color: '#F5B83D', fontSize: 12.5 }}>
+        Search inputs changed. Run compatibility search again; the results below use the previous locked parts, budget and stock filter.
+      </div>}
       {s.searching && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#9AA3AE', fontSize: 13, padding: '12px 0' }}>
           <span style={{ width: 16, height: 16, border: '2px solid #333B46', borderTopColor: '#A3E635', borderRadius: '50%', animation: 'uwspin .8s linear infinite' }} />Exploring configurations…
@@ -301,14 +320,14 @@ function SearchPanel({ s, set, byId, api, runSearch }) {
   );
 }
 
-function SearchResults({ sr, s, set, byId, api, lockedN }) {
+export function SearchResults({ sr, s, set, byId, api, lockedN }) {
   const maxR = Math.max(1, ...sr.rejections.map(r => r.count));
   const stats = [
     { label: 'Candidates explored', value: sr.stats.explored, note: 'partial assignments tried', color: '#E6E9ED' },
     { label: 'Constraint checks', value: sr.stats.checks, note: 'rules evaluated', color: '#E6E9ED' },
     { label: 'Branches pruned', value: sr.stats.pruned, note: `${sr.stats.prunedBudget} budget · ${sr.stats.prunedUnknown} unverifiable`, color: '#F2545B' },
     { label: 'Backtracks', value: sr.stats.backtracks, note: 'category exhausted', color: '#E6E9ED' },
-    { label: 'Valid builds found', value: sr.solutions.length, note: sr.stopped === 'solutions' ? `stopped at limit of ${sr.maxSolutions}` : 'search completed', color: '#3FCF8E' }
+    { label: 'Valid builds found', value: sr.solutions.length, note: sr.stopped === 'solutions' ? `stopped at limit of ${sr.maxSolutions}` : sr.stopped === 'nodes' ? `stopped at ${sr.maxNodes.toLocaleString()} nodes; search incomplete` : 'exhaustive search completed', color: '#3FCF8E' }
   ];
   const trace = s.traceAll ? sr.trace : sr.trace.slice(0, 40);
   return <>
@@ -334,11 +353,13 @@ function SearchResults({ sr, s, set, byId, api, lockedN }) {
               </div>
             ))}
           </div>
-        ) : <div style={{ fontSize: 12.5, color: '#9AA3AE' }}>No branch was rejected before the solution limit was reached.</div>}
+        ) : <div style={{ fontSize: 12.5, color: '#9AA3AE' }}>No branch was rejected in the explored portion of this search.</div>}
         <h3 style={{ margin: '18px 0 10px', fontSize: 13, fontWeight: 600 }}>Valid configurations found <span style={{ fontWeight: 400, color: '#7D8692' }}>· found results sorted by price; capped search is not globally cheapest-K</span></h3>
         {sr.solutions.length === 0 && (
           <div style={{ padding: 12, borderRadius: 7, border: '1px solid rgba(242,84,91,0.35)', background: 'rgba(242,84,91,0.07)', fontSize: 12.5, color: '#E6C3C5', lineHeight: 1.5 }}>
-            No valid configuration contains all locked parts{sr.budget ? ` within ${U.peso(sr.budget)}` : ''}. Remove a conflicting part or raise the budget, then search again.
+            {sr.stopped
+              ? `No verified configuration was found before the search limit. Unexplored combinations remain; this does not prove the parts are incompatible. Narrow the search by locking suitable parts or review the constraints and try again.`
+              : `No valid configuration contains all locked parts${sr.budget ? ` within ${U.peso(sr.budget)}` : ''}. Remove a conflicting part or raise the budget, then search again.`}
           </div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

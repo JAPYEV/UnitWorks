@@ -1,0 +1,23 @@
+
+> unitworks-frontend@0.1.0 test
+> node --test --test-concurrency=1 "test/*.test.mjs"
+
+✔ a node-capped empty search is displayed as incomplete, never as proof of incompatibility (5557.3384ms)
+✔ an exhaustive impossible search is distinguished from an interrupted one (6.9215ms)
+✔ staff backtracking API results render their actual total, product names and trace (228.6068ms)
+✔ DP API result snapshots take precedence over stale frontend inventory (620.6321ms)
+✔ selected optimizer alternatives retain their reproducible inputs through save and staff cannot save (951.5951ms)
+✔ rounded-domain infeasibility and cent-valued totals have accurate frontend explanations (6.4003ms)
+✔ analysis builders consume actual API counters, sampled DP cells and restock decisions (391.0746ms)
+✔ greedy analysis preserves exact decimal-demand order quantities (3.1778ms)
+✔ decimal demand survives the inventory API and reaches greedy results without a phantom unit (93.8357ms)
+✔ search notices distinguish caps and analysis defaults work without a seeded CPU (8.8708ms)
+✔ compatibility search labels stale locks, budgets and stock filters without discarding the recorded trace (23.51ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10857.0716

@@ -133,10 +133,11 @@ export function runOptimizer(products, run) {
   const base = { products, ...run };
   const rec = optimizeBuild(base);
   const alts = !rec.ok ? [] : [
-    { key: 'gfx', label: 'Graphics-focused', r: optimizeBuild({ ...base, pri: { graphics: 5, processing: 2, memory: 2 } }) },
-    { key: 'prod', label: 'Productivity-focused', r: optimizeBuild({ ...base, pri: { graphics: 1, processing: 5, memory: 5 } }) },
-    { key: 'save', label: 'Lower cost', r: optimizeBuild({ ...base, budget: Math.round(run.budget * 0.8 / 100) * 100 }) }
-  ].filter(a => a.r.ok);
+    { key: 'gfx', label: 'Graphics-focused', input: { ...run, pri: { graphics: 5, processing: 2, memory: 2 } } },
+    { key: 'prod', label: 'Productivity-focused', input: { ...run, pri: { graphics: 1, processing: 5, memory: 5 } } },
+    { key: 'save', label: 'Lower cost', input: { ...run, pri: { ...run.pri }, budget: Math.round(run.budget * 0.8 / 100) * 100 } }
+  ].filter(a => a.input.budget >= OPT_SCHEMA.budget.min)
+    .map(a => ({ ...a, r: optimizeBuild({ products, ...a.input }) })).filter(a => a.r.ok);
   if (rec.ok) {
     const byId = indexProducts(products);
     for (const a of alts) a.userScore = scoreBuild(a.r.sel, byId, run.useCase, rec.w);

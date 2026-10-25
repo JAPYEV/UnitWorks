@@ -1,0 +1,70 @@
+{
+  "checkedAt": "2026-10-25T23:10:14.956Z",
+  "scope": "disposable-in-memory-fixture",
+  "method": "Browser clicks created four saves; read-only fixture SQL evidence compared with actual recommendation snapshots. Separate HTTP requests checked staff and anonymous rejection.",
+  "catalog": "44 illustrative seed products",
+  "runs": [
+    {
+      "alternative": "rec",
+      "budget": 70000,
+      "priorities": [
+        3,
+        3,
+        3
+      ],
+      "total": 69750,
+      "lineTotal": 69750,
+      "componentCount": 8,
+      "selectionMatches": true,
+      "score": 76.98
+    },
+    {
+      "alternative": "gfx",
+      "budget": 70000,
+      "priorities": [
+        5,
+        2,
+        2
+      ],
+      "total": 69750,
+      "lineTotal": 69750,
+      "componentCount": 8,
+      "selectionMatches": true,
+      "score": 81.43
+    },
+    {
+      "alternative": "prod",
+      "budget": 70000,
+      "priorities": [
+        1,
+        5,
+        5
+      ],
+      "total": 69850,
+      "lineTotal": 69850,
+      "componentCount": 8,
+      "selectionMatches": true,
+      "score": 77.27
+    },
+    {
+      "alternative": "save",
+      "budget": 56000,
+      "priorities": [
+        3,
+        3,
+        3
+      ],
+      "total": 55700,
+      "lineTotal": 55700,
+      "componentCount": 8,
+      "selectionMatches": true,
+      "score": 67.46
+    }
+  ],
+  "staffSaveStatus": 403,
+  "anonymousInventoryStatus": 401,
+  "runsAfterDeniedSave": 4,
+  "ledgerMismatches": 0,
+  "productionAccess": false,
+  "supabaseSessionVerification": false
+}

@@ -1,5 +1,89 @@
 # Phase 3: algorithm correctness and validation
 
+## October 26 browser/rehearsal follow-up
+
+Continued the existing patch without changing the working algorithms. Added a
+loopback-only browser entry using the existing in-memory API test harness; it
+loads no env files and pins the API client to its own `/api`. Production entry,
+Supabase authentication, authorization and migrations are unchanged.
+
+Actual desktop/phone browser actions, four alternative saves, saved-value checks,
+and current limitations are recorded in [readiness](PHASE3_DEMO_READINESS.md),
+[save evidence](PHASE3_BROWSER_SAVE_EVIDENCE.json) and the
+[defense runbook](PHASE3_DEFENSE_RUNBOOK.md). Browser testing reproduced one
+additional presentation defect: a previous builder search remained visible
+when locks changed. A keyed previous-input warning now distinguishes that
+historical trace from current inputs. It also handles budgets, stock filters,
+late results and cached state without rewriting or rerunning the algorithm.
+
+The complete regression run passed **127 backend + 11 frontend = 138 tests**.
+The final frontend rerun and build output are retained beside this report.
+Earlier counts below are historical checkpoints. Phone checks used a 375×812
+browser viewport, not physical mobile hardware. The fixture does not exercise
+Supabase session acquisition/refresh. No production data or Phase 2 work changed.
+
+## October 26 follow-up: resumed algorithm and frontend validation
+
+The user stopped backup-storage investigation and resumed Phase 3. No live
+credentials/data were used by these tests, no live migrations were run, and no
+Phase 2 audit was repeated. Phase 2 backup evidence remains a separate pending
+item; it is not claimed complete by this work.
+
+Baseline: 119 existing tests previously passed. Follow-up inspection reproduced
+additional defects before implementation: six new regressions initially failed;
+a later minimum-budget regression also failed before its correction.
+
+- Decimal demand such as `0.28 * 25` can exceed 7 in binary floating point,
+  causing `ceil` to order 8 units or advance the reorder threshold by one. Demand
+  ceilings now evaluate the input's decimal representation with integer rational
+  arithmetic. Scientific notation and true fractional requirements are preserved;
+  an independent integer-arithmetic grid covers 495 hundredth-demand/day cases.
+- DP totals already used cents, but remaining/sub-budget subtraction still used
+  floats. Those values now come from cent differences. Currency labels retain
+  cents instead of rounding a computed amount to whole pesos.
+- PC Builder's result panel and toast could claim no solution or completion after
+  hitting a node cap. Both now distinguish an incomplete search from exhaustive
+  infeasibility. Algorithm Analysis defaults to no locked CPU, so it does not
+  depend on a particular seeded record existing.
+- The Build Optimizer save action used the original inputs even while an
+  alternative was selected. Each alternative now carries its own reproducible
+  inputs; the selected configuration submits those inputs to the existing
+  authorized save endpoint. Lower-cost alternatives below the supported API
+  minimum are omitted. Saving still recomputes against current inventory: it is
+  not a reservation or a promise to persist a stale screen snapshot.
+- Changed requirements are marked while an older recommendation remains visible.
+  Comparison text now describes the rounded-domain objective, including lean mode.
+
+Validation executed:
+
+- `npm test`: 127/127 backend tests and 9/9 frontend tests passed in the first
+  complete follow-up run. After the final notification/default changes,
+  `npm --prefix Frontend test` passed 10/10. Current total: **137 tests**.
+- The new frontend suite uses Vite SSR with env-file loading disabled, React's
+  renderer and the real Express API with signed test tokens and fresh in-memory
+  PGlite. It checks rendered prices, scores, names, traces, capped/infeasible
+  states, stale-catalog snapshot precedence, Analysis data, alternative save
+  inputs and staff save denial. It is not a browser click/gesture test suite.
+- `npm run build` passed; the existing >500 kB JavaScript chunk warning remains.
+- Fixture benchmark script executed: demo BT explored 23 assignments / 29 checks
+  from 882000 combinations, stopped at 12 solutions; demo DP considered 48
+  platforms / 403910 fitting transitions and returned 69750 at score 76.98;
+  greedy at 300000 funded 3 products; the broad 100-node search stopped exactly
+  at 100; the 2000-product restock reference was safely omitted.
+- One observed run: BT 40.62 ms, DP 93.20 ms, greedy plus reference 11.46 ms,
+  broad capped search 11.08 ms, 2000-product greedy 311 ms. These timings include
+  machine/load variation and establish no theoretical bound or speedup.
+- The static UI detector returned an empty findings list for the changed pages.
+
+The asymptotic bounds below remain applicable. Exact demand-ceiling arithmetic
+adds bounded decimal-integer work per product (database demand has two decimal
+places); it does not add a new candidate pass or change the greedy ordering rule.
+The existing node/state/reference guards remain. See
+[demonstration and defense readiness](PHASE3_DEMO_READINESS.md) for the remaining
+manual acceptance checklist and explicit modeling/optimality limitations.
+
+## Historical Phase 3 implementation evidence
+
 ## A. Baseline assessment (before algorithm changes)
 
 Source: latest remote main `e3e6130` (merges Phase 2 PR #1). Branch:
