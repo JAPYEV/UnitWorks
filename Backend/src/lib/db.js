@@ -18,7 +18,10 @@ export async function createDb(cfg) {
     return {
       driver: 'pglite',
       query: (text, params = []) => db.query(text, params),
-      exec: sql => db.exec(sql),
+      exec: async sql => {
+        try { return await db.exec(sql); }
+        catch (e) { await db.exec('rollback').catch(() => {}); throw e; }
+      },
       withActor: (actor, fn) => db.transaction(async tx => {
         await tx.query(SET_ACTOR, [actor?.id || '', actor?.name || '']);
         return fn({ query: (text, params = []) => tx.query(text, params) });
@@ -37,7 +40,15 @@ export async function createDb(cfg) {
   return {
     driver: 'postgres',
     query: (text, params = []) => pool.query(text, params),
-    exec: sql => pool.query(sql),
+    // A multi-statement migration/seed can fail after BEGIN. Roll back on the
+    // same connection before returning it to the pool; otherwise the next
+    // request can inherit an aborted transaction.
+    exec: async sql => {
+      const client = await pool.connect();
+      try { return await client.query(sql); }
+      catch (e) { await client.query('rollback').catch(() => {}); throw e; }
+      finally { client.release(); }
+    },
     // One pooled connection for the whole unit of work, so the actor setting and the write share a transaction.
     withActor: async (actor, fn) => {
       const client = await pool.connect();

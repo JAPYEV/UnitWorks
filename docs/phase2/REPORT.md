@@ -3,12 +3,67 @@
 Audit date: October 25, 2026 (Asia/Manila). Branch: `codex/phase-2-data-audit`,
 created from freshly fetched `origin/main` (`4208e7c`).
 
-Status: **Steps 1–4 prepared; Step 5 review checkpoint. Phase 2 is not yet complete.**
+Status: **Hardening implementation ready for draft review; production approval
+and full Supabase recovery verification are still pending. Phase 2 is not yet complete.**
 No production DDL, data cleanup, role changes, or application mutations were run.
 Do not apply the proposed SQL until the review and backup prerequisites below
 have been satisfied. Existing migration files and Phase 1 authorization are unchanged.
 
 ## Inspection and evidence
+
+### Resumed Phase 2 implementation
+
+The follow-up branch `codex/phase-2-hardening` starts directly at `origin/main`
+commit `cab4a08`. The user requested resuming Phase 2 and preparing a draft PR.
+This authorizes preparing the fixes; it does not establish a verified full
+platform backup or approve production SQL. No live migration has been run.
+
+New migration `20261025000600_data_integrity_hardening.sql` implements F1/F2:
+
+- Future-object grants are narrowed for the actual migration execution role
+  (`postgres` on the audited live database); nonexistent browser roles are
+  skipped in local Postgres. Platform-managed owners remain unchanged.
+- Four deferred constraint triggers validate build/restock line sums. Parent
+  locks serialize validation and affected parent IDs are processed in stable
+  order. Valid save/delete/receive workflows continue to pass.
+- A bounded-lock preflight rejects historical mismatches rather than changing
+  rows. The migration takes write-conflicting locks on the four snapshot tables
+  before checking existing totals. The migration runner records it only if the
+  transaction commits. Existing five migrations have not been edited.
+
+Two recovery defects were also corrected: snapshot capture now records only
+the database's **applied** migration prefix, and restoration replays that exact
+prefix even when newer migrations exist in the checkout. It still rejects
+unknown/gapped histories and changed migration hashes. Restore verification
+forces deferred constraints before declaring success. Database `exec()` now
+rolls back a failed multi-statement transaction on the same connection before
+returning it to the pool, preventing an aborted migration from poisoning a
+later request. An isolated regression verifies rollback and continued use.
+
+The resumed read-only audit again reconciled all 46 products and 59 movements;
+all original per-table fingerprints remain identical. A fresh application-data
+snapshot, `Backend/.data/backups/phase2-resumed-predeployment.json`, was read back
+and restored successfully across all 11 tables with zero ledger discrepancies.
+Its SHA-256 is `dc2bd4ea96c740096073fcd3b3b61caf2b31d7ca749c922875b61f88f924a050`;
+verification completed October 25, 2026, 16:08:17 Manila. This remains an
+application-data rehearsal, not a full Supabase/Auth/platform recovery.
+
+The complete backend suite now passes **97/97 tests**, including every original
+authorization test and all normal API workflows with migration 006 active in
+the isolated databases. The existing failed-plan receipt fixture had an
+incorrect header total (20,000 versus its 19,770 line sum); its header and
+remaining amount were corrected without changing the rollback scenario.
+The production frontend build also passed; Vite emitted its chunk-size warning
+for the existing bundle over 500 kB. Read-only before/after audits confirm identical
+application row fingerprints and exactly five live applied migrations.
+
+The draft is not a deployment approval. Outstanding review decisions remain
+F1/F2 scope approval, explicit acceptance of retained archives/unknown specs and
+operational/indexing deferrals, plus full recovery evidence. Phase 3's prerequisite
+is not satisfied merely by merging this draft.
+
+The following sections preserve the initial production audit and its evidence;
+they describe the five-migration live database, not the hardened test database.
 
 Repository review covered all five migrations, generated seed and generator,
 migration/seed runners, database adapter, inventory and plan repositories,
@@ -114,10 +169,11 @@ can defend against arbitrary owner SQL. Express authorization is unchanged.
 
 ## Proposed application, rollback and verification
 
-`proposed-hardening.sql` is an exact review script, deliberately outside the
-automatic migrations directory. It contains no row cleanup. After approval and
-full recovery verification, turn approved sections into a **new** timestamped
-migration. Do not modify the five already-applied files.
+`proposed-hardening.sql` preserves the original review proposal. The executable
+follow-up is now the new migration
+`supabase/migrations/20261025000600_data_integrity_hardening.sql`, tested only
+in isolated databases. It contains no row cleanup. Deploy it only after
+approval and full recovery verification. Do not modify the five already-applied files.
 
 1. Retain the two archived products, eight combined units and three movements.
 2. Confirm backup evidence and actual migration owner (`postgres` in the audit).
@@ -142,6 +198,14 @@ change any objects created in the interval. Removing guards cannot recover bad
 writes; database restore has its own cutover and data-loss limits.
 
 ## Verification and changed files
+
+For the resumed implementation, changed files are the new migration,
+`Backend/scripts/migrate.js`, `Backend/scripts/data-snapshot.js`,
+`Backend/src/lib/db.js`, `Backend/test/helpers.js`,
+`Backend/test/data-audit.test.js`, `Backend/test/db.test.js`, `README.md`,
+this report and `RECOVERY.md`. Baseline: 95 passing tests; final: 97 passing
+tests. No frontend runtime or algorithm code changed. No production SQL was
+applied. The evidence below describes the earlier audit-tooling commit.
 
 The full `npm test` run passed **95/95 tests**, including the existing 91 backend,
 database, algorithm and authorization tests.

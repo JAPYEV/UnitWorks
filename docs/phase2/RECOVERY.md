@@ -36,10 +36,24 @@ no existing verification sidecar:
 npm --prefix Backend run db:snapshot -- verify .data/backups/copied-snapshot.json
 ```
 
-Keep the matching repository revision with the backup. If later migrations have
-been added or edited, verification intentionally rejects the mismatched manifest;
-rehearse the old snapshot using its matching migration set before planning any
-forward migration on a recovered database.
+Keep the matching repository revision with the backup. Capture now records only
+the migration prefix actually applied to the source database. Newer migrations
+may be present in the checkout: verification replays the snapshot's exact prefix
+and does not prematurely upgrade it. Edited migration hashes, unknown filenames
+or gaps still fail verification. Plan forward migration on a recovered database
+separately after replaying its original schema and data.
+
+The current checkout includes migration 006, pending production approval. It is
+not part of the live predeployment snapshot, whose history still has five files.
+New local test databases do apply 006. **Do not run `db:migrate` against the live
+connection until the review and full recovery checklist below is complete.**
+
+Resumed predeployment artifact:
+
+- File: `Backend/.data/backups/phase2-resumed-predeployment.json`.
+- SHA-256: `dc2bd4ea96c740096073fcd3b3b61caf2b31d7ca749c922875b61f88f924a050`.
+- Verified: October 25, 2026, 16:08:17 Manila; all 11 application tables match,
+  with zero ledger discrepancies. The original artifact below remains unchanged.
 
 Verified artifact for this review:
 

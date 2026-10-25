@@ -16,10 +16,10 @@ export const ISSUER = 'https://test-project.supabase.co/auth/v1';
 const AUTH_STUB = `create schema if not exists auth;
   create table if not exists auth.users (id uuid primary key, email text, raw_user_meta_data jsonb not null default '{}'::jsonb);`;
 
-export async function freshDb({ withSeed = true, withAuth = true } = {}) {
+export async function freshDb({ withSeed = true, withAuth = true, through } = {}) {
   const db = await createDb({ dbDriver: 'pglite', pgliteDataDir: 'memory' });
   if (withAuth) await db.exec(AUTH_STUB);
-  await migrate(db, { log: () => {} });
+  await migrate(db, { log: () => {}, through });
   if (withSeed) await seed(db, { log: () => {} });
   return db;
 }
