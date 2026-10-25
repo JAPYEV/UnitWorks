@@ -350,11 +350,16 @@ Status codes:
 
 ## Testing
 
+Phase 2 database inspection, recovery evidence, proposed SQL and the production
+approval checkpoint are documented in [docs/phase2/REPORT.md](docs/phase2/REPORT.md).
+The audit and application-data snapshot commands only read the live database;
+snapshot restore verification always uses a fresh in-memory database.
+
 ```bash
 npm test
 ```
 
-This runs 91 tests with `node:test` against a fresh in-memory Postgres (PGlite) loaded with the real migrations and seed, plus a minimal stand-in for Supabase's `auth.users`. Tokens are signed with a locally generated ES256 key and checked by the same verifier code used in production. No credentials are needed.
+This runs 95 tests with `node:test` against a fresh in-memory Postgres (PGlite) loaded with the real migrations and seed, plus a minimal stand-in for Supabase's `auth.users`. Tokens are signed with a locally generated ES256 key and checked by the same verifier code used in production. No credentials are needed.
 
 - **API (29 tests).** Every endpoint, plus:
   - invalid bodies and filters, missing records, malformed JSON, and the startup config requirement;
@@ -378,6 +383,7 @@ This runs 91 tests with `node:test` against a fresh in-memory Postgres (PGlite) 
   - Backtracking: the solution set equals brute force; locks, in-stock-only and empty inventory are honoured.
   - DP: equals brute force on ₱100-multiple prices and is bounded by brute force on real prices. Also covers brand and memory constraints, insufficient budget, empty inventory and the state-count bound.
   - Greedy: ranking, budget, decision rules, the quantity formula, zero budget, empty inventory, and a case where greedy is suboptimal.
+- **Phase 2 audit and recovery (4 tests).** Read-only audit classification, exact application-data restore and tamper detection, migration/seed repeatability, and isolated proposed-hardening checks.
 
 **Frontend:** there is no automated UI test suite. The six pages were checked manually in a browser against the local database at desktop, tablet (768 px) and phone (375 px) widths, covering console errors, loading, empty and error states, mutations persisting across reloads, dialogs, and the navigation drawer.
 

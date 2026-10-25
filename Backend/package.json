@@ -12,6 +12,8 @@
     "dev:local": "node --env-file-if-exists=.env.local --watch src/server.js",
     "db:migrate": "node --env-file-if-exists=.env scripts/migrate.js",
     "db:seed": "node --env-file-if-exists=.env scripts/seed.js",
+    "db:audit": "node --env-file-if-exists=.env scripts/data-audit.js",
+    "db:snapshot": "node --env-file-if-exists=.env scripts/data-snapshot.js",
     "db:local:setup": "node --env-file-if-exists=.env.local scripts/migrate.js && node --env-file-if-exists=.env.local scripts/seed.js",
     "seed:generate": "node scripts/generate-seed.js",
     "test": "node --test --test-concurrency=1 \"test/**/*.test.js\"",
