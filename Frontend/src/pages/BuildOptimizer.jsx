@@ -34,6 +34,10 @@ export default function BuildOptimizer({ products = [], api = {}, vw = 1280 }) {
   const err = s.touched ? budgetCheck(s.budget) : null;
   const budgetNum = parseBudget(s.budget);
   const wide = vw >= 1180;
+  const inputsChanged = !!s.run && (budgetNum !== s.run.budget || s.useCase !== s.run.useCase
+    || s.cpuBrand !== s.run.cpuBrand || s.gpuBrand !== s.run.gpuBrand || +s.minRam !== s.run.minRam
+    || s.excludeOOS !== s.run.excludeOOS || s.lean !== s.run.lean
+    || ['graphics', 'processing', 'memory'].some(k => s.pri[k] !== s.run.pri[k]));
   const generate = e => {
     e.preventDefault();
     set({ touched: true });
@@ -119,6 +123,9 @@ export default function BuildOptimizer({ products = [], api = {}, vw = 1280 }) {
       </form>
 
       <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {inputsChanged && !s.running && <div role="status" style={{ ...card, padding: '12px 16px', color: '#F5B83D', fontSize: 12.5 }}>
+          Requirements changed. Generate a recommendation to update these results; the configurations below use the previous requirements.
+        </div>}
         {!s.run && !s.running && (
           <div style={{ padding: '48px 24px', border: '1px dashed #333B46', borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 10 }}>
             <div style={{ width: 44, height: 44, borderRadius: 10, background: '#1C2129', border: '1px solid #2C333D', display: 'grid', placeItems: 'center' }}><Icon name="sliders-horizontal" size={20} color="#7D8692" /></div>
@@ -141,7 +148,7 @@ export default function BuildOptimizer({ products = [], api = {}, vw = 1280 }) {
   );
 }
 
-function Fail({ rec, run }) {
+export function Fail({ rec, run }) {
   const reasons = [];
   if (run.cpuBrand !== 'Any') reasons.push(`CPU brand ${run.cpuBrand}`);
   if (run.gpuBrand !== 'Any') reasons.push(`GPU brand ${run.gpuBrand}`);
@@ -160,7 +167,7 @@ function Fail({ rec, run }) {
   );
 }
 
-function Result({ rec, alts, durationMs, run, s, set, products, api }) {
+export function Result({ rec, alts, durationMs, run, s, set, products, api }) {
   const w = rec.w, uc = run.useCase, budget = run.budget;
   // The returned recommendation/alternative snapshots are authoritative for
   // this run's prices, scores and checks even if current inventory has changed.
@@ -172,11 +179,11 @@ function Result({ rec, alts, durationMs, run, s, set, products, api }) {
   const [saving, runSaving] = usePending();
   const saveRun = () => runSaving(async () => {
     try {
-      const out = await optimizerApi.saveRun(run);
-      api.toast('success', 'Optimization run saved', out.rec.ok ? `Run and recommended build stored (${U.peso(out.rec.total)}).` : 'Infeasible run stored.');
+      const out = await optimizerApi.saveRun(cur.input);
+      api.toast('success', 'Optimization run saved', out.rec.ok ? `${cur.label} configuration recomputed and stored (${U.peso(out.rec.total)}).` : 'The current inventory no longer supports this configuration; the infeasible run was stored.');
     } catch (e) { api.toast('error', 'Run not saved', e.message); }
   });
-  const configs = [{ key: 'rec', label: 'Recommended', r: rec }, ...alts].map(c => ({ ...c,
+  const configs = [{ key: 'rec', label: 'Recommended', r: rec, input: run }, ...alts].map(c => ({ ...c,
     userScore: U.scoreBuild(c.r.sel, byId, uc, w), same: c.key !== 'rec' && U.CATEGORIES.every(k => c.r.sel[k.key] === rec.sel[k.key]) }));
   const vi = Math.min(s.view, configs.length - 1), cur = configs[vi];
   const diffs = c => U.CATEGORIES.filter(k => c.r.sel[k.key] !== rec.sel[k.key]).map(k => `${k.label}: ${(byId[c.r.sel[k.key]] || {}).name}`);
@@ -290,8 +297,8 @@ function Result({ rec, alts, durationMs, run, s, set, products, api }) {
             {why.map((x, i) => <li key={i}>{x}</li>)}
           </ul>
         </div>
-        {api.can('optimizer:save') && <button className="h-bg h-bd" onClick={saveRun} disabled={saving} style={{ '--hbg': '#2A313B', '--hbd': '#A3E635', height: 38, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #333B46', borderRadius: 6, background: '#232932', fontSize: 13, fontWeight: 500, opacity: saving ? 0.6 : 1 }}>
-          <Icon name="save" size={15} color="#A3E635" />{saving ? 'Saving…' : 'Save result'}
+        {api.can('optimizer:save') && <button className="h-bg h-bd" onClick={saveRun} disabled={saving || !cur.input} title="Recomputes this configuration using current inventory, then saves the run and build" style={{ '--hbg': '#2A313B', '--hbd': '#A3E635', height: 38, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #333B46', borderRadius: 6, background: '#232932', fontSize: 13, fontWeight: 500, opacity: saving ? 0.6 : 1 }}>
+          <Icon name="save" size={15} color="#A3E635" />{saving ? 'Saving…' : 'Save this configuration'}
         </button>}
         <button className="h-bg h-bd" onClick={openInBuilder} style={{ '--hbg': '#2A313B', '--hbd': '#A3E635', height: 38, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #333B46', borderRadius: 6, background: '#232932', fontSize: 13, fontWeight: 500 }}>
           <Icon name="cpu" size={15} color="#A3E635" />Open in PC Builder
@@ -313,7 +320,7 @@ function Result({ rec, alts, durationMs, run, s, set, products, api }) {
                   <td style={{ padding: '9px 8px 9px 0', fontWeight: 600, whiteSpace: 'nowrap' }}>{c.label}</td>
                   <td style={{ padding: '9px 8px', textAlign: 'right', fontFamily: mono, whiteSpace: 'nowrap' }}>{U.peso(c.r.total)}</td>
                   <td style={{ padding: '9px 8px', textAlign: 'right', fontFamily: mono, whiteSpace: 'nowrap' }}>{c.userScore.toFixed(1)} <span style={{ color: d >= 0 ? '#3FCF8E' : '#F2545B' }}>{i === 0 ? '' : (d >= 0 ? '+' : '') + d.toFixed(1)}</span></td>
-                  <td style={{ padding: '9px 8px', color: '#AEB5BE' }}>{i === 0 ? `Best score for ${uc} within ${U.peso(budget)}` : c.same ? 'Same parts' : diffs(c).join(' · ')}</td>
+                  <td style={{ padding: '9px 8px', color: '#AEB5BE' }}>{i === 0 ? `Best ${run.lean ? 'score-minus-spend objective' : 'weighted score'} in the rounded-cost domain for ${uc}` : c.same ? 'Same parts' : diffs(c).join(' · ')}</td>
                 </tr>
               ); })}
           </tbody>

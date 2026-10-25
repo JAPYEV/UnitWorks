@@ -1,5 +1,7 @@
 # Phase 2 backup and recovery
 
+> Current evidence status (October 26, 2026): backup/recovery sign-off is pending. The original backup archives and rehearsal artifacts were not found in this checkout; no external retention location is documented or confirmed. See the [current evidence review](OPERATIONAL_VERIFICATION.md#current-backup-evidence). Historical completion statements below do not establish current artifact availability.
+
 October 26 final update: native PostgreSQL archives and a real recovery rehearsal
 verified all application/Auth table contents, migration 006, permissions and API
 workflows. The operator explicitly accepted the local-recovery limitation before

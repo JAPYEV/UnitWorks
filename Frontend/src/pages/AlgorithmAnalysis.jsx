@@ -11,7 +11,7 @@ const TABS = [
 ];
 const MK = { ok: ['›', '#A3E635', '#E6E9ED'], prune: ['×', '#F2545B', '#C99A9D'], back: ['↰', '#7D8692', '#7D8692'], solution: ['✓', '#3FCF8E', '#3FCF8E'] };
 const DEC = { selected: '#3FCF8E', partial: '#A3E635', skipped: '#F5B83D' };
-const INIT = { tab: 'bt', btCpu: 'cpu-i7-14700k', btBudget: '120000', dpUse: 'Gaming', dpBudget: '70000', grBudget: '600000' };
+const INIT = { tab: 'bt', btCpu: 'none', btBudget: '120000', dpUse: 'Gaming', dpBudget: '70000', grBudget: '600000' };
 const opts = pairs => pairs.map(([value, label]) => ({ value, label }));
 
 /* Table cell / column / section builders, mirroring the design's data model. */
@@ -24,7 +24,7 @@ const measured = (ms, what) => sec({ title: 'Empirical measurement', sub: 'This 
   stats: [{ label: 'Server time', value: `${ms} ms`, note: what, color: '#E6E9ED' }],
   note: 'Wall-clock time for one execution on the API server, which depends on hardware and load. It illustrates scale only; the theoretical complexity below is derived from the code, not from this number.' });
 
-function backtrackingView(products, byId, s, set, r) {
+export function backtrackingView(products, byId, s, set, r) {
   const budget = s.btBudget === 'none' ? null : +s.btBudget;
   const intro = { title: 'Sample run: constraint-satisfaction search over the current catalog', text: 'Counts below come from running the backtracking routine on the server against current inventory. They are operation counts from this run, not timing benchmarks.' };
   const controls = [
@@ -72,7 +72,7 @@ function backtrackingView(products, byId, s, set, r) {
   };
 }
 
-function dpView(s, set, r) {
+export function dpView(s, set, r) {
   const budget = +s.dpBudget;
   const base = {
     intro: { title: 'Sample run: category-based multiple-choice optimization', text: 'In-stock parts only, balanced priorities, computed on the server from current inventory. Component scores are illustrative indices, not benchmarks.' },
@@ -119,7 +119,7 @@ function dpView(s, set, r) {
   ] };
 }
 
-function greedyView(s, set, r) {
+export function greedyView(s, set, r) {
   const budget = +s.grBudget;
   const intro = { title: 'Sample run: urgency-ordered replenishment', text: 'Computed on the server from current inventory, a 7-day coverage target, and the selected budget. Demand uses each product’s stored average daily sales.' };
   const controls = [{ label: 'Purchasing budget', value: s.grBudget, onChange: e => set({ grBudget: e.target.value }), options: opts([['300000', '₱300,000'], ['600000', '₱600,000'], ['1000000', '₱1,000,000']]) }];

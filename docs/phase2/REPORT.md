@@ -1,5 +1,7 @@
 # Phase 2: database and data cleanup review
 
+> Current evidence status (October 26, 2026): backup/recovery sign-off is pending. The original backup archives and rehearsal artifacts were not found in this checkout; no external retention location is documented or confirmed. See the [current evidence review](OPERATIONAL_VERIFICATION.md#current-backup-evidence). Historical completion statements below do not establish current artifact availability.
+
 Audit date: October 25, 2026 (Asia/Manila). Branch: `codex/phase-2-data-audit`,
 created from freshly fetched `origin/main` (`4208e7c`).
 

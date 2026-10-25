@@ -362,7 +362,7 @@ snapshot restore verification always uses a fresh in-memory database.
 npm test
 ```
 
-This runs 119 tests with `node:test` against a fresh in-memory Postgres (PGlite) loaded with the real migrations and seed, plus a minimal stand-in for Supabase's `auth.users`. Tokens are signed with a locally generated ES256 key and checked by the same verifier code used in production. No credentials are needed.
+This runs 127 backend tests and 10 frontend rendering/integration tests (137 total). Backend tests use `node:test` against a fresh in-memory Postgres (PGlite) loaded with the real migrations and seed, plus a minimal stand-in for Supabase's `auth.users`. Tokens are signed with a locally generated ES256 key and checked by the same verifier code used in production. No credentials are needed.
 
 - **API (29 tests).** Every endpoint, plus:
   - invalid bodies and filters, missing records, malformed JSON, and the startup config requirement;
@@ -387,9 +387,10 @@ This runs 119 tests with `node:test` against a fresh in-memory Postgres (PGlite)
   - DP: equals brute force on ₱100-multiple prices and is bounded by brute force on real prices. Also covers brand and memory constraints, insufficient budget, empty inventory and the state-count bound.
   - Greedy: ranking, budget, decision rules, the quantity formula, zero budget, empty inventory, and a case where greedy is suboptimal.
 - **Phase 2 audit and recovery (6 tests).** Read-only audit classification, exact application-data restore and tamper detection, migration/seed repeatability, hardening checks, restoring older snapshots after newer migrations are added, and atomic refusal of inconsistent historical data.
+- **Phase 3 follow-up (8 additional backend tests).** Exact decimal-demand ceilings (including 495 integer-reference cases), cent-valued DP balances/currency, reproducible alternative-save inputs, and minimum-budget alternatives.
 - **Phase 3 independent verification (22 tests).** Separate compatibility, exhaustive DP and greedy references; fixed and varied fixtures; decimal/unknown/invalid inputs; ties, caps, large choice reconstruction, and HTTP integration. See [Phase 3 specifications and evidence](docs/PHASE3_ALGORITHM_CORRECTNESS.md). Reproduce illustrative operation counts and local timings with `npm --prefix Backend run bench:algorithms`.
 
-**Frontend:** there is no automated UI test suite. The six pages were checked manually in a browser against the local database at desktop, tablet (768 px) and phone (375 px) widths, covering console errors, loading, empty and error states, mutations persisting across reloads, dialogs, and the navigation drawer.
+**Frontend:** `npm --prefix Frontend test` renders the actual algorithm result components using Vite SSR and checks real API responses against a fresh in-memory database, with env-file loading disabled. Its 11 tests cover capped/exhaustive searches, cent-valued output, stale-catalog snapshots, alternative-save inputs, staff denial, and all Analysis views. These are rendering/integration tests, not browser interaction tests. [Current demo/defense checklist](docs/PHASE3_DEMO_READINESS.md). For a loopback-only, disposable demonstration with no production credentials, use the [defense runbook](docs/PHASE3_DEFENSE_RUNBOOK.md) (`npm --prefix Frontend run demo:isolated`). Historical browser verification: The six pages were checked manually in a browser against the local database at desktop, tablet (768 px) and phone (375 px) widths, covering console errors, loading, empty and error states, mutations persisting across reloads, dialogs, and the navigation drawer.
 
 ## Known limitations
 

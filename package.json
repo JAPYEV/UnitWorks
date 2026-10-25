@@ -11,7 +11,7 @@
     "db:migrate": "npm --prefix Backend run db:migrate",
     "db:seed": "npm --prefix Backend run db:seed",
     "db:local:setup": "npm --prefix Backend run db:local:setup",
-    "test": "npm --prefix Backend test",
+    "test": "npm --prefix Backend test && npm --prefix Frontend test",
     "build": "npm --prefix Frontend run build"
   }
 }
