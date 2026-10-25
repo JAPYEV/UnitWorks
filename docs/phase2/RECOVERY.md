@@ -1,11 +1,13 @@
 # Phase 2 backup and recovery
 
-October 26 update: a native PostgreSQL archive and real PostgreSQL recovery
-rehearsal now verify all application/Auth table contents, migration 006,
-permissions and API workflows. See
-[OPERATIONAL_VERIFICATION.md](OPERATIONAL_VERIFICATION.md). A hosted Supabase
-service recovery remains untested; the operator's recovery-scope decision is
-required before replacing the broader deployment gate recorded below.
+October 26 final update: native PostgreSQL archives and a real recovery rehearsal
+verified all application/Auth table contents, migration 006, permissions and API
+workflows. The operator explicitly accepted the local-recovery limitation before
+live migration 006 was applied and verified. See
+[OPERATIONAL_VERIFICATION.md](OPERATIONAL_VERIFICATION.md). Hosted Supabase service
+recovery remains untested; the older broad deployment gate/checklist below is
+historical and was superseded for this migration by that explicit scope approval.
+It remains the recommended checklist for a future full-platform disaster exercise.
 
 ## Verified local application snapshot
 
@@ -50,10 +52,10 @@ and does not prematurely upgrade it. Edited migration hashes, unknown filenames
 or gaps still fail verification. Plan forward migration on a recovered database
 separately after replaying its original schema and data.
 
-The current checkout includes migration 006, pending production approval. It is
-not part of the live predeployment snapshot, whose history still has five files.
-New local test databases do apply 006. **Do not run `db:migrate` against the live
-connection until the review and full recovery checklist below is complete.**
+Migration 006 is now applied to production. It is not part of the retained
+predeployment snapshots, whose history has five files; restoring one therefore
+requires replaying that prefix first and separately applying the reviewed 006
+migration. Do not reset or overwrite the existing project to rehearse recovery.
 
 Resumed predeployment artifact:
 
@@ -77,14 +79,15 @@ There is no supported live import command in this change. Importing an archived
 snapshot into production would require a separately reviewed recovery procedure
 that preserves user IDs, timestamps, ledger identities and constraints.
 
-## Required full Supabase recovery preparation
+## Future full Supabase service recovery exercise
 
 Current Supabase guidance describes both [platform database backups](https://supabase.com/docs/guides/platform/backups)
 and a [CLI logical backup and restore procedure](https://supabase.com/docs/guides/platform/migrating-within-supabase/backup-restore).
 Use the method available for the actual project/plan. Do not assume a scheduled
 backup exists, can be downloaded, or covers every external asset.
 
-Before production changes:
+For a future full-platform recovery exercise (this broader path was not used
+for the operator-approved migration 006 deployment):
 
 1. In the Supabase dashboard, inspect the project's available backup/PITR
    options, timestamp, retention and recovery target. Record evidence without
@@ -113,6 +116,7 @@ Before production changes:
    and a plan to reconcile writes after the recovery point before approval to
    apply any production changes.
 
-Full platform backup and recovery is **pending**, not claimed successful.
-The verified local application snapshot can aid investigation/recovery, but does
-not replace this prerequisite.
+Full hosted platform recovery remains **untested**, not claimed successful.
+Phase 2's approved database recovery evidence now includes the native archive
+and exact application/Auth restore, rather than relying only on the earlier
+application-row JSON snapshot. Preserve the explicit operator-approved scope.

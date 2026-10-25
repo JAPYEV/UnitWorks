@@ -3,19 +3,23 @@
 Audit date: October 25, 2026 (Asia/Manila). Branch: `codex/phase-2-data-audit`,
 created from freshly fetched `origin/main` (`4208e7c`).
 
-Status: **Hardening implementation ready for draft review; production approval
-and full Supabase recovery verification are still pending. Phase 2 is not yet complete.**
+Status: **Phase 2 completed on October 26, 2026 for the operator-approved native
+database/Auth recovery scope. Migration 006 is applied and verified.**
 
-October 26 operational update: the native PostgreSQL backup and recovery
-rehearsal now match all 11 application and 27 Auth tables, and migration 006 plus
-15 API checks pass in the recovered clone. See
+October 26 final update: the native PostgreSQL backup/recovery rehearsal matched
+all 11 application and 27 Auth tables; migration 006 and 15 API checks passed in
+the recovered clone. The operator explicitly approved this recovery limitation
+before production application. All application row fingerprints remain unchanged,
+four total guards are enabled, browser access is denied, and 119/119 regression
+tests passed after deployment. A full hosted Supabase restore remains untested
+and accepted as a documented operational limitation. See
 [OPERATIONAL_VERIFICATION.md](OPERATIONAL_VERIFICATION.md) for artifact checksums,
-rehearsal details and the remaining production recovery-scope decision.
-No production DDL, data cleanup, role changes, or application mutations were run.
-Do not apply the proposed SQL until the review and backup prerequisites below
-have been satisfied. Existing migration files and Phase 1 authorization are unchanged.
+rehearsal details, production evidence and remaining manual operational actions.
+The sections below preserve the historical audit and pre-deployment review;
+their pending-status statements are superseded by this final update. No business
+rows or historical migrations were rewritten, and Phase 1 protection is intact.
 
-## Inspection and evidence
+## Historical inspection and pre-deployment evidence
 
 ### Resumed Phase 2 implementation
 
