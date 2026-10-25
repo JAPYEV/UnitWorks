@@ -214,7 +214,7 @@ describe('greedy restock', () => {
     }
   });
 
-  test('order quantity covers lead time plus coverage, rounded up to the MOQ', () => {
+  test('order quantity covers lead time plus coverage and meets the minimum order', () => {
     const [r] = restockPlan([item('a', { stock: 1, minStock: 3, dailySales: 2, leadTime: 5, moq: 10 })], 1e6, 7).cands;
     // target = ceil(3 + 2 × (5 + 7)) = 27, need = 26, MOQ 10 → 26
     assert.equal(r.target, 27);

@@ -159,7 +159,9 @@ export function optimizerService({ inventory, plans }) {
       const { input: run, rec } = out;
       let build = null;
       if (rec.ok) {
-        const res = checkBuild(rec.sel, indexProducts(await inventory.listActive()));
+        // Persist the exact catalog snapshot that produced the recommendation.
+        // A second read could mix new prices/archive states with the old score/total.
+        const res = checkBuild(rec.sel, indexProducts(rec.items.map(it => it.product)));
         build = buildPayload(`Optimizer · ${run.useCase} · ${peso(run.budget)}`, 'optimizer', run.budget, res);
       }
       const id = await plans.saveOptimizationRun({

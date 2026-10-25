@@ -76,7 +76,41 @@ export const IGPU = { id: 'igpu', virtual: true, sku: '—', category: 'gpu', br
 // ---------- helpers ----------
 export const clone = o => JSON.parse(JSON.stringify(o));
 export const has = v => v !== null && v !== undefined && v !== '' && !(typeof v === 'number' && isNaN(v));
-export const num = v => has(v) && !isNaN(+v) ? +v : null;
+export const num = v => (typeof v === 'number' || typeof v === 'string' && v.trim() !== '') && Number.isFinite(+v) && +v >= 0 ? +v : null;
+const compareId = (a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+const EPS = 1e-9;
+function moneyCents(value, label = 'Money', zero = true) {
+  const c = Math.round(value * 100);
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || (!zero && value === 0)
+    || !Number.isSafeInteger(c) || c > Number.MAX_SAFE_INTEGER / 32 || Number(value.toFixed(2)) !== value) {
+    throw new RangeError(`${label} must be a safe ${zero ? 'non-negative' : 'positive'} amount with at most two decimal places`);
+  }
+  return c;
+}
+function whole(value, label, min = 0) {
+  if (!Number.isSafeInteger(value) || value < min) throw new RangeError(`${label} must be a whole number >= ${min}`);
+}
+function algorithmCatalog(products, restock = false) {
+  if (!Array.isArray(products)) throw new RangeError('Products must be an array');
+  const seen = new Set();
+  const real = products.filter(p => !p?.virtual && !p?.archived);
+  for (const p of real) {
+    if (!p || typeof p.id !== 'string' || !p.id || p.id === 'igpu' || seen.has(p.id) || !Object.hasOwn(CAT,p.category)) throw new RangeError('Invalid or duplicate product identity/category');
+    seen.add(p.id);
+    moneyCents(restock ? p.cost : p.price, restock ? 'Unit cost' : 'Price', false);
+    whole(p.stock, 'Stock');
+    if (!restock && p.perf && Object.values(p.perf).some(v => v != null && (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 100))) throw new RangeError('Performance scores must be between 0 and 100');
+  }
+  return real.map(normalizedProduct).sort(compareId);
+}
+function normalizedProduct(p) {
+  const specs = { ...(p.specs || {}) };
+  for (const field of SPEC_FIELDS[p.category] || []) {
+    if (field.type === 'number') specs[field.key] = num(specs[field.key]);
+    if (field.type === 'select' && !field.options.includes(specs[field.key])) specs[field.key] = null;
+  }
+  return { ...p, specs };
+}
 export const list = s => (has(s) ? String(s) : '').split(',').map(x => x.trim()).filter(Boolean);
 export const peso = n => (n < 0 ? '−' : '') + '₱' + Math.round(Math.abs(n || 0)).toLocaleString('en-US');
 export const pesoShort = n => n >= 1e6 ? '₱' + (n / 1e6).toFixed(2) + 'M' : n >= 1e4 ? '₱' + (n / 1e3).toFixed(1) + 'k' : peso(n);
@@ -94,12 +128,12 @@ export function stockStatus(p) {
   return STATUS.in;
 }
 export function indexProducts(products) {
-  const m = { igpu: IGPU };
+  const m = Object.assign(Object.create(null), { igpu: IGPU });
   for (const p of products) m[p.id] = p;
   return m;
 }
 export function candidatesFor(products, cat, inStockOnly) {
-  const l = products.filter(p => p.category === cat && (!inStockOnly || p.stock > 0));
+  const l = products.filter(p => !p.archived && !p.virtual && p.category === cat && (!inStockOnly || p.stock > 0));
   if (cat === 'gpu') l.push(IGPU);
   return l;
 }
@@ -165,6 +199,7 @@ export const CONSTRAINTS = [
   { id: 'coolerFit', label: 'Cooler fits in case', short: 'Cooler clearance', cats: ['cooler', 'case'],
     rule: 'air: height ≤ case.maxCooler · AIO: radiator ≤ case.maxRad',
     test: b => { const c = b.cooler.specs, k = b.case.specs;
+      if (!['Air', 'AIO'].includes(c.type)) return UN('Cooler type not specified or unsupported');
       if (c.type === 'AIO') { const r = num(c.radiator), m = num(k.maxRad);
         if (r == null || m == null) return UN('Radiator size or support not specified');
         return r <= m ? OK(`${r} mm radiator, case supports up to ${m} mm`) : NO(`${r} mm radiator; case supports ${m} mm`); }
@@ -184,23 +219,26 @@ export const CONSTRAINTS = [
   { id: 'psuConn', label: 'PSU has required GPU power connectors', short: 'PSU connectors', cats: ['psu', 'gpu'],
     rule: 'psu 8-pin ≥ gpu 8-pin; 16-pin native or 2× 8-pin adapter',
     test: b => { if (b.gpu.virtual) return OK('No GPU power connectors needed');
-      const g = b.gpu.specs, s = b.psu.specs, sp = num(s.pcie8) || 0;
+      const g = b.gpu.specs, s = b.psu.specs, sp = num(s.pcie8);
+      if (!['Yes', 'No'].includes(g.hpwr)) return UN('GPU connector type not specified');
       if (g.hpwr === 'Yes') { if (s.hpwr === 'Yes') return OK('Native 16-pin connector');
+        if (sp == null || sp < 2 && s.hpwr !== 'No') return UN('PSU connector support not specified');
         return sp >= 2 ? OK('16-pin via included 2× 8-pin adapter') : NO(`Card needs 16-pin (or 2× 8-pin adapter); PSU has ${sp}× 8-pin`); }
       const need = num(g.pcie8); if (need == null) return UN('GPU connectors not specified');
+      if (need > 0 && sp == null) return UN('PSU 8-pin connectors not specified');
       return sp >= need ? OK(need ? `${need}× 8-pin needed, ${sp} available` : 'Slot-powered card') : NO(`Card needs ${need}× 8-pin; PSU has ${sp}`); } },
   { id: 'storage', label: 'Storage interface supported by motherboard', short: 'Storage interface', cats: ['storage', 'motherboard'],
     rule: 'NVMe → m2 ≥ 1 · SATA → sata ≥ 1',
     test: b => { const i = b.storage.specs.iface, m = b.motherboard.specs;
-      if (!has(i)) return UN('Storage interface not specified');
+      if (!['NVMe', 'SATA'].includes(i)) return UN('Storage interface not specified or unsupported');
       const slots = i === 'NVMe' ? num(m.m2) : num(m.sata);
       if (slots == null) return UN('Motherboard slot count not specified');
-      return slots > 0 ? OK(`${i} drive, ${slots} ${i === 'NVMe' ? 'M.2 slot(s)' : 'SATA port(s)'}`) : NO(`Board has no ${i === 'NVMe' ? 'M.2 slot' : 'SATA port'}`); } }
+      return slots >= 1 ? OK(`${i} drive, ${slots} ${i === 'NVMe' ? 'M.2 slot(s)' : 'SATA port(s)'}`) : NO(`Board has fewer than one ${i === 'NVMe' ? 'M.2 slot' : 'SATA port'}`); } }
 ];
 
 function resolve(sel, byId) {
   const b = {};
-  for (const c of CATEGORIES) { const id = sel && sel[c.key]; if (id && byId[id]) b[c.key] = byId[id]; }
+  for (const c of CATEGORIES) { const id = sel && sel[c.key]; if (id && byId[id]?.category === c.key) b[c.key] = normalizedProduct(byId[id]); }
   return b;
 }
 export function checkBuild(sel, byId) {
@@ -215,7 +253,7 @@ export function checkBuild(sel, byId) {
   const fails = checks.filter(c => c.status === 'fail'), unknowns = checks.filter(c => c.status === 'unknown'),
     passes = checks.filter(c => c.status === 'pass');
   const overall = fails.length ? 'incompatible' : missing.length ? 'incomplete' : unknowns.length ? 'unverified' : 'compatible';
-  const total = Object.values(b).reduce((s, p) => s + (p.price || 0), 0);
+  const total = Object.values(b).reduce((s, p) => s + moneyCents(p.price), 0) / 100;
   const oos = Object.values(b).filter(p => !p.virtual && p.stock <= 0);
   return { b, checks, missing, fails, unknowns, passes, overall, total, oos };
 }
@@ -227,15 +265,21 @@ export function feasible(b) {
 // ---------- BACKTRACKING: compatibility search ----------
 export const SEARCH_ORDER = ['cpu', 'motherboard', 'ram', 'case', 'cooler', 'gpu', 'psu', 'storage'];
 export function backtrackSearch(opts) {
-  const { products, locked = {}, budget = null, inStockOnly = false, maxSolutions = 12, maxNodes = 40000, traceLimit = 180 } = opts;
+  const { locked = {}, budget = null, inStockOnly = false, maxSolutions = 12, maxNodes = 40000, traceLimit = 180 } = opts;
+  const products = algorithmCatalog(opts.products);
+  const budgetCents = budget == null ? null : moneyCents(budget, 'Budget');
+  if (typeof inStockOnly !== 'boolean') throw new RangeError('Stock filter must be boolean');
+  whole(maxSolutions, 'Solution limit', 1); whole(maxNodes, 'Node limit', 1); whole(traceLimit, 'Trace limit');
   const byId = indexProducts(products);
+  if (!locked || typeof locked !== 'object' || Array.isArray(locked)) throw new RangeError('Locks must be an object');
+  for (const [cat,id] of Object.entries(locked)) if (!SEARCH_ORDER.includes(cat) || !byId[id] || byId[id].category !== cat) throw new RangeError('Locked product must exist in its category');
   const cands = {};
   for (const cat of SEARCH_ORDER) {
-    const l = locked[cat] && byId[locked[cat]] ? [byId[locked[cat]]] : candidatesFor(products, cat, inStockOnly);
-    cands[cat] = l.slice().sort((a, b) => a.price - b.price);
+    const l = candidatesFor(products, cat, inStockOnly).filter(p => !locked[cat] || p.id === locked[cat]);
+    cands[cat] = l.slice().sort((a, b) => a.price - b.price || compareId(a,b));
   }
   const n = SEARCH_ORDER.length, minSuffix = new Array(n + 1).fill(0);
-  for (let i = n - 1; i >= 0; i--) minSuffix[i] = minSuffix[i + 1] + (cands[SEARCH_ORDER[i]].length ? Math.min(...cands[SEARCH_ORDER[i]].map(p => p.price)) : Infinity);
+  for (let i = n - 1; i >= 0; i--) minSuffix[i] = minSuffix[i + 1] + (cands[SEARCH_ORDER[i]].length ? moneyCents(cands[SEARCH_ORDER[i]][0].price) : Infinity);
   const space = SEARCH_ORDER.reduce((s, c) => s * cands[c].length, 1);
   const stats = { explored: 0, checks: 0, pruned: 0, prunedBudget: 0, prunedUnknown: 0, solutions: 0, backtracks: 0 };
   const reasons = {}; const trace = []; const sols = []; let stopped = null;
@@ -244,8 +288,8 @@ export function backtrackSearch(opts) {
   function rec(i, cost) {
     if (i === n) {
       const sel = {}; SEARCH_ORDER.forEach(c => sel[c] = b[c].id);
-      sols.push({ sel, total: cost }); stats.solutions++;
-      T(n - 1, SEARCH_ORDER[n - 1], '', 'solution', `Valid configuration #${stats.solutions} · ${peso(cost)}`);
+      sols.push({ sel, total: cost / 100 }); stats.solutions++;
+      T(n - 1, SEARCH_ORDER[n - 1], '', 'solution', `Valid configuration #${stats.solutions} · ${peso(cost / 100)}`);
       if (sols.length >= maxSolutions) { stopped = 'solutions'; return true; }
       return false;
     }
@@ -253,9 +297,10 @@ export function backtrackSearch(opts) {
     for (const p of cands[cat]) {
       if (stats.explored >= maxNodes) { stopped = 'nodes'; return true; }
       stats.explored++;
-      if (budget != null && cost + p.price + minSuffix[i + 1] > budget) {
+      const price = moneyCents(p.price);
+      if (budgetCents != null && cost + price + minSuffix[i + 1] > budgetCents) {
         stats.pruned++; stats.prunedBudget++; reasons.budget = (reasons.budget || 0) + 1;
-        T(i, cat, p.name, 'prune', `Over budget: ≥ ${peso(cost + p.price + minSuffix[i + 1])} with cheapest remaining parts`);
+        T(i, cat, p.name, 'prune', `Over budget: ≥ ${peso((cost + price + minSuffix[i + 1]) / 100)} with cheapest remaining parts`);
         continue;
       }
       b[cat] = p;
@@ -276,14 +321,14 @@ export function backtrackSearch(opts) {
         continue;
       }
       T(i, cat, p.name, 'ok', 'Consistent with earlier choices');
-      if (rec(i + 1, cost + p.price)) { delete b[cat]; return true; }
+      if (rec(i + 1, cost + price)) { delete b[cat]; return true; }
       delete b[cat];
     }
     stats.backtracks++;
     if (i > 0) T(i, cat, '', 'back', `No more ${CAT[cat].label} options on this branch → backtrack to ${CAT[SEARCH_ORDER[i - 1]].label}`);
     return false;
   }
-  rec(0, 0);
+  if (SEARCH_ORDER.every(cat => cands[cat].length)) rec(0, 0);
   const reasonLabels = Object.assign({ budget: 'Over budget', unknown: 'Unverifiable (missing specs)' }, Object.fromEntries(CONSTRAINTS.map(k => [k.id, k.short])));
   const rejections = Object.entries(reasons).map(([k, v]) => ({ key: k, label: reasonLabels[k], count: v })).sort((a, b) => b.count - a.count);
   sols.sort((a, b) => a.total - b.total);
@@ -319,7 +364,14 @@ export const DP_STAGES = [{ key: 'ram', label: 'Memory', cats: ['ram'] }, { key:
   { key: 'cooler', label: 'Cooler', cats: ['cooler'] }, { key: 'storage', label: 'Storage', cats: ['storage'] }];
 
 export function optimizeBuild(o) {
-  const { products, budget, useCase = 'Gaming', pri, lean = false, cpuBrand = 'Any', gpuBrand = 'Any', minRam = 0, excludeOOS = true, unit = 100 } = o;
+  const { budget, useCase = 'Gaming', lean = false, cpuBrand = 'Any', gpuBrand = 'Any', minRam = 0, excludeOOS = true, unit = 100 } = o;
+  const products = algorithmCatalog(o.products);
+  const budgetCents = moneyCents(budget, 'Budget'), unitCents = moneyCents(unit, 'Budget unit', false);
+  if (budget > 500000 || Math.floor(budgetCents / unitCents) > 20000) throw new RangeError('Optimizer budget/state limit exceeded');
+  if (typeof lean !== 'boolean' || typeof excludeOOS !== 'boolean') throw new RangeError('Optimizer flags must be boolean');
+  const pri = { graphics: 3, processing: 3, memory: 3, ...o.pri };
+  if (!USE_CASES[useCase] || !['Any','AMD','Intel'].includes(cpuBrand) || !['Any','AMD','NVIDIA','Intel'].includes(gpuBrand)
+    || ![0,32,64].includes(minRam) || Object.values(pri).some(v => !Number.isInteger(v) || v < 1 || v > 5)) throw new RangeError('Invalid optimizer preferences');
   const w = weightsFor(useCase, pri);
   const okStock = p => !excludeOOS || p.stock > 0;
   const pool = cat => products.filter(p => p.category === cat && okStock(p));
@@ -335,43 +387,47 @@ export function optimizeBuild(o) {
     const b = { cpu, motherboard: mb, case: cs };
     if (!feasible(b)) continue;
     anchorsTotal++;
-    const anchorCost = cpu.price + mb.price + cs.price;
+    const anchorCents = moneyCents(cpu.price) + moneyCents(mb.price) + moneyCents(cs.price), anchorCost = anchorCents / 100;
     const gl = [];
     gl.push(rams.filter(r => feasible({ ...b, ram: r })).map(r => ({ items: { ram: r }, cost: r.price, val: w.ram * sc(r, 'ram') })));
     const pw = [];
     const gList = gpus.concat(gpuBrand === 'Any' && cpu.specs.igpu === 'Yes' ? [IGPU] : []);
     for (const g of gList) {
       if (!g.virtual && num(g.specs.length) == null) { unknownNames.add(g.name); continue; }
-      for (const ps of psus) if (feasible({ ...b, gpu: g, psu: ps })) pw.push({ items: { gpu: g, psu: ps }, cost: g.price + ps.price, val: w.gpu * sc(g, 'gpu') + w.psu * sc(ps, 'psu') });
+      for (const ps of psus) if (feasible({ ...b, gpu: g, psu: ps })) pw.push({ items: { gpu: g, psu: ps }, cost: (moneyCents(g.price) + moneyCents(ps.price)) / 100, val: w.gpu * sc(g, 'gpu') + w.psu * sc(ps, 'psu') });
     }
     gl.push(pw);
     gl.push(coolers.filter(c => feasible({ ...b, cooler: c })).map(c => ({ items: { cooler: c }, cost: c.price, val: w.cooler * sc(c, 'cooler') })));
     gl.push(stor.filter(s => feasible({ ...b, storage: s })).map(s => ({ items: { storage: s }, cost: s.price, val: w.storage * sc(s, 'storage') })));
     if (gl.some(g => !g.length)) { anchorsInfeasible++; continue; }
-    const minCost = anchorCost + gl.reduce((s, g) => s + Math.min(...g.map(x => x.cost)), 0);
-    minFeasible = Math.min(minFeasible, minCost);
-    if (minCost > budget) { anchorsOver++; continue; }
+    const minCost = anchorCents + gl.reduce((s, g) => s + g.reduce((m,x) => Math.min(m,moneyCents(x.cost)),Infinity), 0);
+    minFeasible = Math.min(minFeasible, minCost / 100);
+    if (minCost > budgetCents) { anchorsOver++; continue; }
     anchorsFeasible++;
-    const cap = Math.floor((budget - anchorCost) / unit);
+    const cap = Math.floor((budgetCents - anchorCents) / unitCents);
     const dp = [new Float64Array(cap + 1)], ch = [];
-    const groups = gl.map(g => g.map(x => ({ ...x, u: Math.ceil(x.cost / unit) })));
+    let previousCosts = new Float64Array(cap + 1);
+    const groups = gl.map(g => g.map(x => ({ ...x, cents: moneyCents(x.cost), u: Math.ceil(moneyCents(x.cost) / unitCents) })));
     for (const g of groups) {
       maxK = Math.max(maxK, g.length);
-      const prev = dp[dp.length - 1], cur = new Float64Array(cap + 1).fill(-Infinity), c = new Int16Array(cap + 1).fill(-1);
+      const prev = dp[dp.length - 1], cur = new Float64Array(cap + 1).fill(-Infinity), c = new Int32Array(cap + 1).fill(-1);
+      const currentCosts = new Float64Array(cap + 1).fill(Infinity);
       for (let x = 0; x <= cap; x++) for (let k = 0; k < g.length; k++) {
         const op = g[k]; if (op.u > x) continue;
         const v = prev[x - op.u] + op.val; states++;
-        if (v > cur[x]) { cur[x] = v; c[x] = k; }
+        const cost = previousCosts[x - op.u] + op.cents;
+        if (v > cur[x] + EPS || Math.abs(v - cur[x]) <= EPS && cost < currentCosts[x]) { cur[x] = v; c[x] = k; currentCosts[x] = cost; }
       }
       dp.push(cur); ch.push(c);
+      previousCosts = currentCosts;
     }
     const anchorScore = w.cpu * sc(cpu, 'cpu');
     const last = dp[dp.length - 1];
     let bx = -1, bobj = -Infinity;
     for (let x = 0; x <= cap; x++) {
       if (last[x] === -Infinity) continue;
-      const obj = anchorScore + last[x] - (lean ? 15 * (anchorCost + x * unit) / budget : 0);
-      if (obj > bobj + 1e-9) { bobj = obj; bx = x; }
+      const obj = anchorScore + last[x] - (lean ? 15 * (anchorCents + x * unitCents) / budgetCents : 0);
+      if (obj > bobj + EPS || Math.abs(obj - bobj) <= EPS && (bx < 0 || previousCosts[x] < previousCosts[bx])) { bobj = obj; bx = x; }
     }
     if (bx < 0) { anchorsOver++; anchorsFeasible--; continue; }
     // reconstruct
@@ -379,7 +435,7 @@ export function optimizeBuild(o) {
     for (let i = groups.length - 1; i >= 0; i--) { const k = ch[i][x]; const op = groups[i][k]; path.unshift({ stage: i, x, k, op }); x -= op.u; }
     const sel = { cpu: cpu.id, motherboard: mb.id, case: cs.id };
     path.forEach(st => Object.entries(st.op.items).forEach(([c, p]) => sel[c] = p.id));
-    const total = anchorCost + path.reduce((s, st) => s + st.op.cost, 0);
+    const total = (anchorCents + path.reduce((s, st) => s + st.op.cents, 0)) / 100;
     const score = anchorScore + last[bx];
     const ar = { sel, cpu, mb, cs, anchorCost, total, score, objective: bobj };
     anchorResults.push(ar);
@@ -404,7 +460,9 @@ export function optimizeBuild(o) {
   };
   const transitions = best.path.map((st, i) => ({ stage: DP_STAGES[i].label, choice: Object.values(st.op.items).map(p => p.name).join(' + '),
     cost: st.op.cost, value: st.op.val, options: best.groups[i].length }));
-  const topAnchors = anchorResults.slice().sort((a, b) => b.objective - a.objective).slice(0, 6).map(a => ({ cpu: a.cpu.name, mb: a.mb.name, cs: a.cs.name, anchorCost: a.anchorCost, total: a.total, score: a.score, sel: a.sel }));
+  const topAnchors = anchorResults.slice().sort((a, b) => Math.abs(b.objective-a.objective)>EPS ? b.objective-a.objective
+    : a.total-b.total || compareId(a.cpu,b.cpu) || compareId(a.mb,b.mb) || compareId(a.cs,b.cs))
+    .slice(0, 6).map(a => ({ cpu: a.cpu.name, mb: a.mb.name, cs: a.cs.name, anchorCost: a.anchorCost, total: a.total, score: a.score, sel: a.sel }));
   return {
     ok: true, budget, useCase, w, lean, sel, items, total: best.ar.total, score: best.ar.score, remaining: budget - best.ar.total,
     anchorCost: best.ar.anchorCost, anchorScore: best.anchorScore, subBudget: budget - best.ar.anchorCost, cap: best.cap, unit,
@@ -415,8 +473,13 @@ export function optimizeBuild(o) {
 
 // ---------- GREEDY: restock optimizer ----------
 export function restockPlan(products, budget, coverDays = 7) {
-  const real = products.filter(p => !p.virtual);
-  const maxDaily = Math.max(0.1, ...real.map(p => p.dailySales || 0));
+  const real = algorithmCatalog(products, true), budgetCents = moneyCents(budget, 'Budget');
+  if (![7,14,30].includes(coverDays)) throw new RangeError('Coverage must be 7, 14 or 30 days');
+  for (const p of real) {
+    whole(p.minStock,'Minimum stock'); whole(p.leadTime,'Lead time',1); whole(p.moq ?? 1,'Minimum order',1);
+    if (typeof (p.dailySales ?? 0) !== 'number' || !Number.isFinite(p.dailySales ?? 0) || (p.dailySales ?? 0) < 0) throw new RangeError('Daily sales must be finite and non-negative');
+  }
+  const maxDaily = real.reduce((m,p) => Math.max(m,p.dailySales ?? 0),0.1);
   const rows = real.map(p => {
     const daily = p.dailySales || 0;
     const dts = daily > 0 ? p.stock / daily : Infinity;
@@ -425,6 +488,9 @@ export function restockPlan(products, budget, coverDays = 7) {
     const need = Math.max(0, target - p.stock);
     const moq = Math.max(1, p.moq || 1);
     const qty = Math.max(moq, need);
+    whole(target,'Restock target'); whole(qty,'Recommended quantity',1);
+    const costCents = qty * moneyCents(p.cost);
+    if (!Number.isSafeInteger(costCents) || costCents > Number.MAX_SAFE_INTEGER / 32) throw new RangeError('Restock order value exceeds safe limits');
     const leadRatio = p.leadTime / Math.max(isFinite(dts) ? dts : 1e9, 0.5);
     const urgency = Math.round(100 * (0.6 * Math.min(leadRatio, 3) / 3 + 0.4 * daily / maxDaily));
     let reason;
@@ -433,20 +499,21 @@ export function restockPlan(products, budget, coverDays = 7) {
     else if (p.stock <= p.minStock) reason = `At or below minimum stock (${p.stock}/${p.minStock})`;
     else reason = `Will reach reorder point (${rop} units) within the lead time`;
     return { p, id: p.id, name: p.name, category: p.category, stock: p.stock, minStock: p.minStock, daily, lead: p.leadTime, moq, unitCost: p.cost,
-      dts, rop, target, need, qty, cost: qty * p.cost, leadRatio, urgency, reason, candidate: p.stock <= rop && daily > 0 };
+      dts, rop, target, need, qty, cost: costCents / 100, leadRatio, urgency, reason, candidate: p.stock <= rop && daily > 0 };
   });
-  const cands = rows.filter(r => r.candidate).sort((a, b) => b.urgency - a.urgency || b.daily - a.daily);
-  let remaining = budget; const steps = []; const selected = []; const skipped = [];
+  const cands = rows.filter(r => r.candidate).sort((a, b) => b.urgency - a.urgency || b.daily - a.daily || compareId(a,b));
+  let remainingCents = budgetCents, remaining = budget; const steps = []; const selected = []; const skipped = [];
   cands.forEach((r, i) => {
     r.rank = i + 1;
     const before = remaining;
-    if (r.cost <= remaining) {
-      remaining -= r.cost; r.decision = 'selected'; r.orderQty = r.qty; r.orderCost = r.cost; selected.push(r);
+    if (moneyCents(r.cost) <= remainingCents) {
+      remainingCents -= moneyCents(r.cost); remaining = remainingCents / 100; r.decision = 'selected'; r.orderQty = r.qty; r.orderCost = r.cost; selected.push(r);
       steps.push({ rank: r.rank, r, before, after: remaining, decision: 'selected', note: `Ordered ${r.qty} × ${peso(r.unitCost)}` });
     } else {
-      const maxQ = Math.floor(remaining / r.unitCost);
+      const maxQ = Math.floor(remainingCents / moneyCents(r.unitCost));
       if (maxQ >= r.moq && maxQ > 0) {
-        r.decision = 'partial'; r.orderQty = maxQ; r.orderCost = maxQ * r.unitCost; remaining -= r.orderCost; selected.push(r);
+        r.decision = 'partial'; r.orderQty = maxQ; r.orderCost = maxQ * moneyCents(r.unitCost) / 100;
+        remainingCents -= maxQ * moneyCents(r.unitCost); remaining = remainingCents / 100; selected.push(r);
         steps.push({ rank: r.rank, r, before, after: remaining, decision: 'partial', note: `Reduced to ${maxQ} of ${r.qty} units to fit remaining budget` });
       } else {
         r.decision = 'skipped'; r.orderQty = 0; r.orderCost = 0;
@@ -458,17 +525,17 @@ export function restockPlan(products, budget, coverDays = 7) {
       }
     }
   });
-  const totalCost = budget - remaining;
+  const totalCost = (budgetCents - remainingCents) / 100;
   const greedyValue = selected.reduce((s, r) => s + r.urgency * (r.orderQty / r.qty), 0);
-  // Exact reference: 0/1 knapsack over full orders maximizing total urgency (used only to illustrate greedy's limits)
-  const U = 100, capU = Math.floor(budget / U);
+  // Exact only within this conservative rounded-cost, full-order reference domain.
+  const U = 10000, capU = Math.floor(budgetCents / U);
   let ks = null;
-  if (cands.length && capU <= 20000) {
+  if (cands.length && capU <= 20000 && cands.length * (capU + 1) <= 2_000_000) {
     const dp = new Float64Array(capU + 1); const take = cands.map(() => new Uint8Array(capU + 1));
-    cands.forEach((r, i) => { const c = Math.ceil(r.cost / U); for (let x = capU; x >= c; x--) { const v = dp[x - c] + r.urgency; if (v > dp[x]) { dp[x] = v; take[i][x] = 1; } } });
+    cands.forEach((r, i) => { const c = Math.ceil(moneyCents(r.cost) / U); for (let x = capU; x >= c; x--) { const v = dp[x - c] + r.urgency; if (v > dp[x]) { dp[x] = v; take[i][x] = 1; } } });
     let x = capU; const picks = [];
-    for (let i = cands.length - 1; i >= 0; i--) if (take[i][x]) { picks.push(cands[i]); x -= Math.ceil(cands[i].cost / U); }
-    ks = { value: dp[capU], count: picks.length, names: picks.map(r => r.name), cost: picks.reduce((s, r) => s + r.cost, 0) };
+    for (let i = cands.length - 1; i >= 0; i--) if (take[i][x]) { picks.push(cands[i]); x -= Math.ceil(moneyCents(cands[i].cost) / U); }
+    ks = { value: dp[capU], count: picks.length, names: picks.map(r => r.name), cost: picks.reduce((s, r) => s + moneyCents(r.cost), 0) / 100 };
   }
   return { budget, coverDays, rows, cands, steps, selected, skipped, remaining, totalCost, notNeeded: rows.length - cands.length,
     greedyValue, knapsack: ks, partialCount: selected.filter(r => r.decision === 'partial').length, maxDaily };

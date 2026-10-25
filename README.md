@@ -88,7 +88,8 @@ A missing specification makes the rule **unverified**, never assumed compatible.
 - **Budget bound.** A branch is also pruned when its current cost plus the cheapest remaining parts exceeds the budget.
 - **What it returns.** Valid builds, explored and pruned counts, rejections by reason, and a step trace.
 - **Limits.** It stops after 12 solutions or 40,000 nodes, so results are complete only when the analysis says "Exhaustive for this input".
-- **Complexity.** Worst case O(Π nᵢ · C) for nᵢ candidates per category and C = 11 rules. That is exponential in the number of categories, and pruning does not change the worst case. Space: O(8) recursion depth, plus the solutions and trace it keeps.
+- **Ordering.** Candidates use price then product ID; returned results are price-sorted. A capped search does not guarantee the globally cheapest K builds. Locks also obey the stock filter.
+- **Complexity.** Preparation is O(N log N); search is O(C · Σ_d Π_{i≤d} nᵢ), or O(8 · C · Π nᵢ) for nonempty domains. This is exponential as category count grows. Space includes O(N) candidate storage, O(8) recursion, O(8S) saved selections and O(T) trace.
 - **Verified.** The test suite compares the set of builds it finds against brute-force enumeration of all 882,000 combinations.
 
 ### Dynamic programming: Build Optimizer
@@ -100,20 +101,22 @@ A missing specification makes the rule **unverified**, never assumed compatible.
   - A multiple-choice DP over the groups, `D[i][b] = max_k(D[i−1][b − cost_k] + value_k)`, uses ₱100 budget steps with costs rounded up.
 - **Optimality.**
   - The result is exact (optimal) whenever part prices are multiples of ₱100. The tests check this against brute force for three budget/use-case cases.
-  - With other prices, rounding up can rarely miss a build within a few hundred pesos of the limit. The budget is never exceeded, and the result is provably at least as good as the brute-force optimum computed with rounded-up costs (also tested).
+  - With other prices, the result maximizes the objective in the conservative rounded domain, not necessarily among all builds that fit their actual prices. Four groups add less than four budget steps of rounding per build; there is no claim about how often this affects results or any general score-loss bound. The budget is never exceeded.
   - The optional "prefer unspent budget" penalty is applied per budget state using rounded costs.
   - Scores are additive, so interactions such as CPU bottlenecks are not modeled.
-- **Complexity.** O(P · G · B · K): P platforms, G = 4 groups, B budget states, K options per group. Platform enumeration adds O(n_cpu · n_mb · n_case · C). This is pseudo-polynomial in the budget.
+- **Money and ties.** Actual prices/totals use integer cents. Platform cost stays exact, GPU+PSU round together, and other groups round independently. Equal objective values prefer lower actual total, then deterministic ID-ordered traversal. Core allocation rejects budgets over ₱500,000 or more than 20,001 budget states.
+- **Complexity.** O(P · G · B · K) for the DP, with catalog ordering O(N log N), platform enumeration O(n_cpu · n_mb · n_case · C), and option preparation O(P · (n_ram+n_cooler+n_storage+n_gpu·n_psu) · C). Space is O(N+G·B+G·K+P). This is pseudo-polynomial in budget/unit; B is the largest per-platform budget-state count, not necessarily the winning table's size.
 
 ### Greedy: Restock Optimizer
 
 - **Candidates.** Products at or below their reorder point: `⌈daily × lead + min⌉`, with daily sales > 0.
-- **Urgency.** `urgency = 100 × (0.6 × min(lead ÷ days_left, 3) ÷ 3 + 0.4 × daily ÷ max_daily)`, with `days_left` floored at 0.5. Candidates are sorted by urgency, with higher daily sales breaking ties.
+- **Urgency.** `urgency = round(100 × (0.6 × min(lead ÷ days_left, 3) ÷ 3 + 0.4 × daily ÷ max_daily))`, with `days_left` floored at 0.5 and `max_daily` at least 0.1. Candidates sort by urgency, daily sales, then ascending product ID. Missing/zero demand does not generate an order.
 - **Order quantity.** `max(MOQ, ⌈min + daily × (lead + cover)⌉ − stock)`.
 - **Funding rule.** In rank order, fund the full order if it fits. Otherwise buy the largest affordable quantity that still meets the MOQ, or skip the item. Every decision carries a reason.
+- **MOQ and precision.** MOQ is a minimum, not a pack multiple. Monetary allocation uses integer cents; invalid quantities, costs, demand and derived order values are rejected before selection.
 - **Demand data.** Demand is each product's stored average daily sales (`daily_sales`). There is no separate sales-history table.
 - **Not optimal.** Greedy never revisits a choice, so one expensive urgent order can crowd out several cheaper ones. A test demonstrates this. A 0/1 knapsack over full orders (costs rounded to ₱100) is computed only as a reference. Its objective differs slightly from greedy's (greedy counts partial orders proportionally).
-- **Complexity.** O(n log n) to sort plus O(n) for the pass. The reference knapsack is O(n · B/100).
+- **Complexity.** O(N log N+n log n) for catalog/candidate ordering and O(N) for scans, O(N) space. The reference knapsack adds O(nH) time and space, H=floor(budget/100)+1. It is omitted if H exceeds 20,001 or nH exceeds 2,000,000; the greedy plan still runs.
 
 **Empirical vs. theoretical.** The analysis page shows one measured server time per run. That number depends on hardware and load and is not evidence of complexity. The complexity statements above are derived from the code.
 
@@ -359,7 +362,7 @@ snapshot restore verification always uses a fresh in-memory database.
 npm test
 ```
 
-This runs 97 tests with `node:test` against a fresh in-memory Postgres (PGlite) loaded with the real migrations and seed, plus a minimal stand-in for Supabase's `auth.users`. Tokens are signed with a locally generated ES256 key and checked by the same verifier code used in production. No credentials are needed.
+This runs 119 tests with `node:test` against a fresh in-memory Postgres (PGlite) loaded with the real migrations and seed, plus a minimal stand-in for Supabase's `auth.users`. Tokens are signed with a locally generated ES256 key and checked by the same verifier code used in production. No credentials are needed.
 
 - **API (29 tests).** Every endpoint, plus:
   - invalid bodies and filters, missing records, malformed JSON, and the startup config requirement;
@@ -384,6 +387,7 @@ This runs 97 tests with `node:test` against a fresh in-memory Postgres (PGlite) 
   - DP: equals brute force on ₱100-multiple prices and is bounded by brute force on real prices. Also covers brand and memory constraints, insufficient budget, empty inventory and the state-count bound.
   - Greedy: ranking, budget, decision rules, the quantity formula, zero budget, empty inventory, and a case where greedy is suboptimal.
 - **Phase 2 audit and recovery (6 tests).** Read-only audit classification, exact application-data restore and tamper detection, migration/seed repeatability, hardening checks, restoring older snapshots after newer migrations are added, and atomic refusal of inconsistent historical data.
+- **Phase 3 independent verification (22 tests).** Separate compatibility, exhaustive DP and greedy references; fixed and varied fixtures; decimal/unknown/invalid inputs; ties, caps, large choice reconstruction, and HTTP integration. See [Phase 3 specifications and evidence](docs/PHASE3_ALGORITHM_CORRECTNESS.md). Reproduce illustrative operation counts and local timings with `npm --prefix Backend run bench:algorithms`.
 
 **Frontend:** there is no automated UI test suite. The six pages were checked manually in a browser against the local database at desktop, tablet (768 px) and phone (375 px) widths, covering console errors, loading, empty and error states, mutations persisting across reloads, dialogs, and the navigation drawer.
 

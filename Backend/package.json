@@ -17,6 +17,7 @@
     "db:local:setup": "node --env-file-if-exists=.env.local scripts/migrate.js && node --env-file-if-exists=.env.local scripts/seed.js",
     "seed:generate": "node scripts/generate-seed.js",
     "test": "node --test --test-concurrency=1 \"test/**/*.test.js\"",
+    "bench:algorithms": "node scripts/benchmark-algorithms.js",
     "users": "node --env-file-if-exists=.env scripts/users.js",
     "users:local": "node --env-file-if-exists=.env.local scripts/users.js"
   },
