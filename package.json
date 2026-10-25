@@ -1,0 +1,17 @@
+{
+  "name": "unitworks",
+  "private": true,
+  "type": "module",
+  "description": "UnitWorks: PC component compatibility and inventory optimization (React + Express + Supabase PostgreSQL)",
+  "scripts": {
+    "install:all": "npm --prefix Backend install && npm --prefix Frontend install",
+    "dev:api": "npm --prefix Backend run dev",
+    "dev:api:local": "npm --prefix Backend run dev:local",
+    "dev:web": "npm --prefix Frontend run dev",
+    "db:migrate": "npm --prefix Backend run db:migrate",
+    "db:seed": "npm --prefix Backend run db:seed",
+    "db:local:setup": "npm --prefix Backend run db:local:setup",
+    "test": "npm --prefix Backend test",
+    "build": "npm --prefix Frontend run build"
+  }
+}
