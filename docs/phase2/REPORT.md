@@ -5,6 +5,12 @@ created from freshly fetched `origin/main` (`4208e7c`).
 
 Status: **Hardening implementation ready for draft review; production approval
 and full Supabase recovery verification are still pending. Phase 2 is not yet complete.**
+
+October 26 operational update: the native PostgreSQL backup and recovery
+rehearsal now match all 11 application and 27 Auth tables, and migration 006 plus
+15 API checks pass in the recovered clone. See
+[OPERATIONAL_VERIFICATION.md](OPERATIONAL_VERIFICATION.md) for artifact checksums,
+rehearsal details and the remaining production recovery-scope decision.
 No production DDL, data cleanup, role changes, or application mutations were run.
 Do not apply the proposed SQL until the review and backup prerequisites below
 have been satisfied. Existing migration files and Phase 1 authorization are unchanged.

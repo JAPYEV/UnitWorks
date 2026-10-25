@@ -1,5 +1,12 @@
 # Phase 2 backup and recovery
 
+October 26 update: a native PostgreSQL archive and real PostgreSQL recovery
+rehearsal now verify all application/Auth table contents, migration 006,
+permissions and API workflows. See
+[OPERATIONAL_VERIFICATION.md](OPERATIONAL_VERIFICATION.md). A hosted Supabase
+service recovery remains untested; the operator's recovery-scope decision is
+required before replacing the broader deployment gate recorded below.
+
 ## Verified local application snapshot
 
 Run from the repository root; dependencies must already be installed:
