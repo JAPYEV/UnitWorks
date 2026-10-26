@@ -1,5 +1,7 @@
 # UnitWorks
 
+Deploy the frontend and API together: [single-project Vercel setup](docs/VERCEL_DEPLOYMENT.md).
+
 UnitWorks is a PC component compatibility and inventory optimization system for a computer parts shop. It combines inventory management with three algorithms:
 
 | Feature | Algorithm | What it answers |
