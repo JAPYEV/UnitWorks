@@ -1,12 +1,12 @@
 # Deploy UnitWorks as one Vercel project
 
-The existing Frontend, Backend, and shared folders stay in place. Vercel serves
-Frontend/dist and sends /api/* to api/index.js, which initializes the Express app.
+The existing Frontend, Backend, and shared folders stay in place. Vercel builds
+two services inside one project and routes /api/* to Backend/index.js.
 The frontend already defaults to /api and attaches the Supabase session token.
 
 ## 1. Push the complete repository
 
-Push the source, api/index.js, vercel.json, and both package-lock.json files to
+Push the source, Backend/index.js, vercel.json, and both package-lock.json files to
 your Git provider. Do not commit real .env files or credentials.
 
 ## 2. Import into Vercel
@@ -16,13 +16,17 @@ Choose Add New > Project and import the repository. Use:
 | Setting | Value |
 | --- | --- |
 | Root Directory | Repository root (leave blank or use ./) |
-| Framework Preset | Other |
+| Framework Preset | Services (required for this configuration) |
 | Node.js Version | 22.x |
-| Install Command | Supplied by vercel.json |
-| Build Command | Supplied by vercel.json: npm run build |
-| Output Directory | Supplied by vercel.json: Frontend/dist |
+| Install Command | Per service in vercel.json: npm ci |
+| Build Command | Frontend service: npm run build |
+| Output Directory | Frontend service: dist |
 
 Do not choose Frontend or Backend as the root directory. No start command is needed.
+Remove old project-level install/build/output overrides and let each service use
+its configuration. Ensure source files outside service roots are included because
+both services import shared/. The old root api/index.js has been removed: services
+mode ignores functions in a root api/ directory.
 
 ## 3. Add environment variables before deploying
 
@@ -87,7 +91,7 @@ tools, API requests should go to the same site's /api/... URLs.
 | Build fails | Build logs; repository root; both committed lockfiles |
 | Function fails to start | Runtime logs; DATABASE_URL and SUPABASE_URL |
 | Health returns 503 | Pooler URI, password, database availability and network restrictions |
-| API returns HTML | Correct root directory and committed vercel.json |
+| API returns HTML | Correct root directory, Services preset, and service routing in vercel.json |
 | 401 from protected API | Sign in; check both Supabase URL settings refer to the same project |
 | 403 after sign-in | Grant an active UnitWorks admin or staff role |
 | Login configuration missing | Set both VITE_SUPABASE variables and redeploy |
